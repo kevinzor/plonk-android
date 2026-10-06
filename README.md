@@ -8,6 +8,7 @@ The game server and web client live in a separate (private) repo. This app gives
 
 | | |
 |---|---|
+| **Game files in the APK** | The game's code, models, icons and sounds ship inside the app. Each file is served from the APK while its sha256 still matches the live server's manifest; only changed files are downloaded. A deploy reaches the app on the next page load, with no app update, and with no network at all the app still opens the game. See [docs/BUNDLE.md](docs/BUNDLE.md). |
 | **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. |
 | **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
 | **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
@@ -25,6 +26,12 @@ app/src/main/java/land/plonk/app/
   MainActivity.kt        full-screen game activity: insets, back, renderer recovery, file chooser
   PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
   PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
+  bundle/
+    GameBundle.kt        serves unchanged game files from the APK; plans each page load (live/offline/network)
+    LiveManifest.kt      GET /app/manifest with an ETag cache on disk
+    BundleIndex.kt       what this APK carries (assets/bundled-manifest.json)
+    BundlePaths.kt       which paths may ever be bundled, and their content types
+    BundleResponse.kt    the HTTP response for one bundled file (headers, byte ranges)
   bridge/
     NativeBridge.kt      window.PlonkNative: origin lock, routing by message type, built-in caps
     BridgeHandler.kt     the interface one bridge feature implements
@@ -32,8 +39,12 @@ app/src/main/java/land/plonk/app/
     BridgeHost.kt        activity access for handlers: intents, permission prompts, result launchers
     HapticsHandler.kt    haptic
     CoreHandlers.kt      exit, awake, info
+    BundleHandler.kt     bundle
 app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
+app/src/main/assets/     the game bundle, generated at build time and not committed
+tools/fetch-bundle.mjs   fills the game bundle from the live server (or a local checkout)
 scripts/build.sh         memory-capped build (see below)
+docs/BUNDLE.md           how the game bundle works, and the server's /app/manifest contract
 ```
 
 ## Native bridge
@@ -43,7 +54,7 @@ The page talks to the app with JSON strings. Every message has a type `t`. Repli
 ```js
 PlonkNative.onmessage = (e) => { const m = JSON.parse(e.data); /* m.t, m.id, ... */ };
 PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
-// -> { t: 'caps', v: 1, types: ['awake', 'caps', 'exit', 'haptic', 'info'] }
+// -> { t: 'caps', v: 1, types: ['awake', 'bundle', 'caps', 'exit', 'haptic', 'info'] }
 ```
 
 | `t` | Request | Reply |
@@ -53,6 +64,7 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 | `awake` | `on`: keep the screen on (default `true`) | none |
 | `exit` | close the app | none |
 | `info` | | `{ version, code, sdk, model, seeker }` |
+| `bundle` | | `{ mode, bundleBuild, liveBuild, bundled, served, servedBytes, network }`: how this page load used the APK's game files. mode is `live`, `offline` or `network` |
 
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
 
@@ -65,7 +77,10 @@ Requirements: JDK 21 and the Android SDK (platform 37, build-tools 37.0.0).
 ```bash
 scripts/build.sh debug     # app/build/outputs/apk/debug/app-debug.apk
 scripts/build.sh release   # signed if a signing env file exists
+FETCH_BUNDLE=1 scripts/build.sh release   # first pack the live game's files into the APK
 ```
+
+`FETCH_BUNDLE=1` runs `tools/fetch-bundle.mjs` (Node 20+) before Gradle. It needs the server's `/app/manifest`, or set `BUNDLE_FROM=<game>/public` to pack from a local checkout. Without the flag, the existing bundle is kept. An APK with no bundle works normally and streams every file. See [docs/BUNDLE.md](docs/BUNDLE.md).
 
 Our build box also runs the live game server, so `scripts/build.sh` runs Gradle inside a `systemd-run` scope:
 - hard 2.6 GB memory cap
