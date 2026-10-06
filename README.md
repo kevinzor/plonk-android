@@ -14,6 +14,7 @@ The game server and web client live in a separate (private) repo. This app gives
 | **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
+| **Game alerts** | Boss spawns, payouts, party and trade invites and whispers become Android notifications, but only while the game is off screen (on screen, the game shows them itself). Each kind is its own channel under "Game alerts", so players can mute one kind in system settings. The Android 13 permission prompt appears only when the game asks for it. Tapping an alert resumes the running game, and opening the game clears the shade. |
 | **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
@@ -32,6 +33,8 @@ app/src/main/java/land/plonk/app/
     BridgeHost.kt        activity access for handlers: intents, permission prompts, result launchers
     HapticsHandler.kt    haptic
     CoreHandlers.kt      exit, awake, info
+    NotifyHandler.kt     notify, notifyPermission, notifyState, notifySettings
+    GameAlerts.kt        alert kinds and their notification channels; posting, replacing by tag, clearing
 app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
 scripts/build.sh         memory-capped build (see below)
 ```
@@ -53,6 +56,10 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 | `awake` | `on`: keep the screen on (default `true`) | none |
 | `exit` | close the app | none |
 | `info` | | `{ version, code, sdk, model, seeker }` |
+| `notify` | `title`, `body`, `tag?`, `kind?` (boss, payout, invite, party, trade, whisper; else other), `ttl?` seconds. Shown only while the game is off screen. Alerts with the same `tag` replace each other. | `{ shown, reason? }`, where reason is foreground, permission, disabled or muted. With neither title nor body: `{ error: 'bad_request' }` |
+| `notifyPermission` | Shows Android 13's notification prompt if needed. Send it from a player action, such as an "Alert me" toggle. | `{ granted, enabled, permission }` |
+| `notifyState` | | `{ enabled, permission, kinds: { boss, payout, invite, whisper, other } }`. permission is granted, default or denied, as on the web. |
+| `notifySettings` | `kind?`: open the system settings for these alerts, or for one kind | `{ opened }` |
 
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
 

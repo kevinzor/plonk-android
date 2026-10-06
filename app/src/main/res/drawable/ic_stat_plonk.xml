@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Status bar icon for game alerts: a $PLONK coin with a P cut out of it.
+    Android draws small notification icons as a white mask, so this is one solid shape with
+    even-odd holes (the rim groove and the P), and no color.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,2a10,10 0,1 1,0 20a10,10 0,1 1,0 -20z
+            M12,2.8a9.2,9.2 0,1 1,0 18.4a9.2,9.2 0,1 1,0 -18.4z
+            M12,3.6a8.4,8.4 0,1 1,0 16.8a8.4,8.4 0,1 1,0 -16.8z
+            M8,6.5H12.5A3.5,3.5 0,0 1,12.5 13.5H10.6V17.5H8z
+            M10.6,8.7H12.4A1.3,1.3 0,0 1,12.4 11.3H10.6z" />
+</vector>
