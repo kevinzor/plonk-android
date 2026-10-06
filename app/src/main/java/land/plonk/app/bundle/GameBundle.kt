@@ -3,6 +3,7 @@ package land.plonk.app.bundle
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import android.webkit.ServiceWorkerClient
@@ -17,6 +18,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -29,8 +31,8 @@ import java.util.concurrent.atomic.AtomicLong
  * unchanged static files come from the APK instead of the network, so a cold start skips
  * megabytes of JavaScript, models and icons, and works on weak signal.
  *
- * How each page load is planned (decided when the game shell `/` is requested, so the shell and
- * every file it loads come from the same plan):
+ * How each page load is planned (decided once per document, when its main-frame request is
+ * made, so the shell and every file it loads come from the same plan):
  * - **live**: the server's manifest (`GET /app/manifest`) answered. A bundled file is used only
  *   if its sha256 equals the server's; changed, new or unknown files come from the network. A
  *   deploy is therefore live in the app on the next page load, with no app update.
@@ -39,6 +41,12 @@ import java.util.concurrent.atomic.AtomicLong
  *   network is back.
  * - **network**: online but no manifest (the endpoint is missing or slow). Everything goes to
  *   the network, exactly like the website. Old bundled code is never mixed with a newer page.
+ *
+ * Only a new document changes the plan. A main-frame navigation to any other page on the origin
+ * (an App Link to /wiki/x) gets **network**, and so does a document the service worker answers
+ * from its own cache, because the app can't know which build that shell is. A `fetch('/')` from
+ * a running page or a service-worker precache is not a new document: it goes to the network and
+ * leaves the running page's plan alone, so a version poll sees the real server.
  *
  * Requests that are not GETs for a known static path (`/status`, `/auth`, `/api`, POSTs,
  * websockets) are never touched. The request path does only map lookups; hashes are compared
@@ -87,7 +95,10 @@ class GameBundle(
     private var livePlanAt = 0L // guarded by lock
     private var lastResult: LiveManifest.Result? = null // guarded by lock
 
-    @Volatile private var plan = Plan(Mode.NETWORK, null, emptySet())
+    @Volatile private var plan = NETWORK_PLAN
+
+    /** Set when a navigation request planned the document that is about to start. */
+    private val documentPlanned = AtomicBoolean(false)
 
     @Volatile private var closed = false
 
@@ -107,21 +118,33 @@ class GameBundle(
     fun interceptServiceWorkers() {
         ServiceWorkerController.getInstance().setServiceWorkerClient(
             object : ServiceWorkerClient() {
-                override fun shouldInterceptRequest(request: WebResourceRequest) = intercept(request)
+                override fun shouldInterceptRequest(request: WebResourceRequest) = intercept(request, isNavigation(request))
             },
         )
     }
 
-    /** The response for [request] from the APK, or null to let it go to the network unchanged. */
-    fun intercept(request: WebResourceRequest): WebResourceResponse? {
+    /**
+     * The response for [request] from the APK, or null to let it go to the network unchanged.
+     * [navigation] is true when the request loads a new main-frame document; only those choose a
+     * new plan.
+     */
+    fun intercept(
+        request: WebResourceRequest,
+        navigation: Boolean,
+    ): WebResourceResponse? {
         if (closed || !request.method.equals("GET", ignoreCase = true)) return null
         val url = request.url
-        if (url.scheme != "https" || !url.host.equals(host, ignoreCase = true)) return null
-        if (url.port != -1 && url.port != 443) return null
-        val key = BundlePaths.keyFor(url.path ?: return null) ?: return null
+        val key = if (isGameOrigin(url)) url.path?.let(BundlePaths::keyFor) else null
         val idx = index
         if (idx.isEmpty) return null
-        if (key == BundlePaths.SHELL) plan = planPageLoad(idx)
+        if (navigation) {
+            plan = if (key == BundlePaths.SHELL) planPageLoad(idx) else newPlan(NETWORK_PLAN, idx)
+            documentPlanned.set(true)
+        } else if (key == BundlePaths.SHELL) {
+            // fetch('/') from a running page, or a service-worker precache: not a new document.
+            return null
+        }
+        if (key == null) return null
 
         val current = plan
         val response = if (current.allows(key)) BundleResponse.build(app.assets, idx, key, rangeOf(request)) else null
@@ -133,6 +156,16 @@ class GameBundle(
             servedBytes.addAndGet(idx[key]?.size ?: 0)
         }
         return response
+    }
+
+    /**
+     * A main-frame document has started (WebViewClient.onPageStarted, UI thread). If no
+     * navigation request planned it, the service worker answered it from its own cache, so its
+     * build is unknown: stream everything for it rather than keep the previous page's plan.
+     */
+    fun onDocumentStarted() {
+        if (documentPlanned.getAndSet(false)) return
+        if (indexLazy.isInitialized() && !index.isEmpty) plan = newPlan(NETWORK_PLAN, index)
     }
 
     /** State for the page and for debugging (`{ t: 'bundle' }` on the bridge). */
@@ -180,18 +213,34 @@ class GameBundle(
         worker.shutdownNow()
     }
 
-    private fun planPageLoad(idx: BundleIndex): Plan {
+    private fun planPageLoad(idx: BundleIndex): Plan =
+        newPlan(
+            when (networkState()) {
+                NetState.NONE -> Plan(Mode.OFFLINE, idx.build, emptySet())
+                // A captive portal or dead Wi-Fi: don't make the shell wait on a fetch that will
+                // time out. Use a recent manifest if there is one, and ask again in the background.
+                NetState.UNVALIDATED -> freshLivePlan() ?: NETWORK_PLAN.also { startManifestFetch() }
+                NetState.VALIDATED -> awaitLivePlan(idx) ?: NETWORK_PLAN
+            },
+            idx,
+        )
+
+    /** Make [next] the plan for a new document: its counters start from zero. */
+    private fun newPlan(
+        next: Plan,
+        idx: BundleIndex,
+    ): Plan {
         served.set(0)
         servedBytes.set(0)
         missed.set(0)
-        val next =
-            when {
-                !isOnline() -> Plan(Mode.OFFLINE, idx.build, emptySet())
-                else -> awaitLivePlan(idx) ?: Plan(Mode.NETWORK, null, emptySet())
-            }
         if (BuildConfig.DEBUG) Log.d(TAG, "Bundle plan: ${describe(next, idx)}")
         return next
     }
+
+    private fun freshLivePlan(): Plan? =
+        synchronized(lock) {
+            livePlan?.takeIf { SystemClock.elapsedRealtime() - livePlanAt < LIVE_MAX_AGE_MS }
+        }
 
     /**
      * A plan from a manifest at most [LIVE_MAX_AGE_MS] old, fetching one if needed. The shell
@@ -201,13 +250,8 @@ class GameBundle(
     private fun awaitLivePlan(idx: BundleIndex): Plan? {
         val pending =
             synchronized(lock) {
-                val cached = livePlan
-                if (cached != null && SystemClock.elapsedRealtime() - livePlanAt < LIVE_MAX_AGE_MS) return cached
-                if (lastResult is LiveManifest.Result.Missing && inFlight == null &&
-                    SystemClock.elapsedRealtime() - livePlanAt < MISSING_RETRY_MS
-                ) {
-                    return null
-                }
+                freshLivePlan()?.let { return it }
+                if (inFlight == null && recentlyFailed(lastResult, SystemClock.elapsedRealtime() - livePlanAt)) return null
                 startManifestFetch()
             } ?: return null
         val result =
@@ -219,6 +263,20 @@ class GameBundle(
         return (result as? LiveManifest.Result.Fresh)?.let { planFor(idx, it) }
     }
 
+    /**
+     * Don't ask again right after a 404 (a server without the endpoint) or a failed fetch: during
+     * an outage every Retry would otherwise wait out the full [SHELL_WAIT_MS] first.
+     */
+    private fun recentlyFailed(
+        result: LiveManifest.Result?,
+        ageMs: Long,
+    ): Boolean =
+        when (result) {
+            is LiveManifest.Result.Missing -> ageMs < MISSING_RETRY_MS
+            is LiveManifest.Result.Unreachable -> ageMs < UNREACHABLE_RETRY_MS
+            else -> false
+        }
+
     /** Start a manifest fetch unless one is running. Returns the running fetch. */
     private fun startManifestFetch(): Future<LiveManifest.Result>? =
         synchronized(lock) {
@@ -228,12 +286,12 @@ class GameBundle(
         }
 
     private fun onManifest(result: LiveManifest.Result): LiveManifest.Result {
-        val newPlan = (result as? LiveManifest.Result.Fresh)?.let { planFor(index, it) }
+        val fresh = (result as? LiveManifest.Result.Fresh)?.let { planFor(index, it) }
         synchronized(lock) {
             inFlight = null
             lastResult = result
             livePlanAt = SystemClock.elapsedRealtime()
-            livePlan = newPlan
+            livePlan = fresh
         }
         if (BuildConfig.DEBUG && result !is LiveManifest.Result.Fresh) {
             val why = if (result is LiveManifest.Result.Unreachable) result.reason else "no /app/manifest on the server"
@@ -254,11 +312,32 @@ class GameBundle(
         return Plan(Mode.LIVE, live.build, current)
     }
 
-    private fun isOnline(): Boolean {
-        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return true
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    private enum class NetState { NONE, UNVALIDATED, VALIDATED }
+
+    private fun networkState(): NetState {
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return NetState.VALIDATED
+        val caps = cm.activeNetwork?.let(cm::getNetworkCapabilities) ?: return NetState.NONE
+        return when {
+            !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) -> NetState.NONE
+            !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> NetState.UNVALIDATED
+            else -> NetState.VALIDATED
+        }
+    }
+
+    private fun isGameOrigin(url: Uri): Boolean =
+        url.scheme == "https" && url.host.equals(host, ignoreCase = true) && (url.port == -1 || url.port == 443)
+
+    /**
+     * True for a service-worker request that loads a document: the SW passing a navigation on
+     * with fetch(event.request). Precaches and page fetch() calls ask for any type, not HTML.
+     */
+    private fun isNavigation(request: WebResourceRequest): Boolean {
+        if (request.isForMainFrame) return true
+        val headers = request.requestHeaders ?: return false
+        fun header(name: String) = headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+        return header("Sec-Fetch-Mode") == "navigate" ||
+            header("Sec-Fetch-Dest") == "document" ||
+            header("Accept")?.startsWith("text/html") == true
     }
 
     private fun describe(
@@ -277,6 +356,8 @@ class GameBundle(
     private companion object {
         const val TAG = "Plonk"
 
+        val NETWORK_PLAN = Plan(Mode.NETWORK, null, emptySet())
+
         /** How long the game shell waits for the manifest before loading from the network. */
         const val SHELL_WAIT_MS = 2500L
 
@@ -285,5 +366,8 @@ class GameBundle(
 
         /** After a 404 (server without the endpoint), don't ask again for this long. */
         const val MISSING_RETRY_MS = 5 * 60_000L
+
+        /** After a failed fetch (timeout, offline, 5xx), don't wait on another for this long. */
+        const val UNREACHABLE_RETRY_MS = 10_000L
     }
 }

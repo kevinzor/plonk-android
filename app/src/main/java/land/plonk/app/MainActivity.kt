@@ -229,6 +229,7 @@ class MainActivity : ComponentActivity() {
                         onMainFrameError = { httpStatus -> loads.failed(httpStatus) },
                         onRendererGone = { dead -> rebuildAfterRendererLoss(dead) },
                         interceptRequest = bundle::intercept,
+                        onMainFrameStarted = bundle::onDocumentStarted,
                     )
                 setDownloadListener { url, _, _, _, _ ->
                     val scheme = url.toUri().scheme?.lowercase()

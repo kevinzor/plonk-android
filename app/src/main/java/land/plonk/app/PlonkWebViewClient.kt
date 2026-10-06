@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.util.Log
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
@@ -30,7 +31,9 @@ open class PlonkWebViewClient(
     /** The game page failed to load: `null` for a network error, else the HTTP status. */
     private val onMainFrameError: (httpStatus: Int?) -> Unit,
     private val onRendererGone: (WebView) -> Unit,
-    private val interceptRequest: (WebResourceRequest) -> WebResourceResponse? = { null },
+    /** Answer a request locally; the flag is true for a main-frame document request. */
+    private val interceptRequest: (WebResourceRequest, Boolean) -> WebResourceResponse? = { _, _ -> null },
+    private val onMainFrameStarted: () -> Unit = {},
 ) : WebViewClient() {
     override fun shouldOverrideUrlLoading(
         view: WebView,
@@ -77,7 +80,16 @@ open class PlonkWebViewClient(
     override fun shouldInterceptRequest(
         view: WebView,
         request: WebResourceRequest,
-    ): WebResourceResponse? = interceptRequest(request)
+    ): WebResourceResponse? = interceptRequest(request, request.isForMainFrame)
+
+    override fun onPageStarted(
+        view: WebView,
+        url: String?,
+        favicon: Bitmap?,
+    ) {
+        super.onPageStarted(view, url, favicon)
+        onMainFrameStarted()
+    }
 
     override fun onPageFinished(
         view: WebView,

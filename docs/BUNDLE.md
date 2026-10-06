@@ -11,10 +11,12 @@ page load ── GET /  ──► GameBundle picks a plan for this load
                           ├─ no network ............ offline: serve the whole bundle
                           ├─ GET /app/manifest ok .. live:    serve files whose hash matches
                           └─ 404 / slow / error .... network: serve nothing, like the website
+                             (also: Wi-Fi that isn't validated yet, unless a manifest
+                              from the last 15 s is at hand)
    then GET /js/main.js, /models/x.glb, ... ──► served by that plan, or passed to the network
 ```
 
-The plan is chosen when the game shell (`/`) is requested, so the shell and every file it loads follow the same rules. The three plans:
+The plan is chosen once per document, when the main frame requests it, so the shell and every file it loads follow the same rules. The three plans:
 
 | Plan | When | What comes from the APK |
 |---|---|---|
@@ -23,6 +25,12 @@ The plan is chosen when the game shell (`/`) is requested, so the shell and ever
 | `network` | Online, but no manifest: the endpoint is missing (404), slow (over 2.5 s), or broken. | Nothing. Every request goes to the network, exactly like the website. |
 
 There is no plan that guesses. Without a fresh answer from the server, the app never mixes old bundled code with a newer page from the network. The last good manifest is cached on disk only so that the next check can be a 304.
+
+**Only a new document changes the plan.**
+- A main-frame navigation to any page other than the shell (an App Link to `/wiki/x`, say) runs under `network`.
+- A document the service worker answers from its own cache never reaches the app, so the app can't tell which build it is. It also runs under `network` (the app notices it in `onPageStarted`).
+- A `GET /` that is not a navigation (a page `fetch('/')`, a service-worker precache) goes to the network and leaves the running page's plan alone. A version poll therefore always sees the real server.
+- A failed manifest fetch is remembered for 10 s, so Retry during an outage doesn't wait 2.5 s each time.
 
 **What is never touched:** any request that is not a `GET`, other hosts, websockets, and every path outside the allow-list. The allow-list is `/` and `/index.html`, plus files under `/js/ /vendor/ /css/ /icons/ /models/ /sounds/ /fx/ /fonts/ /images/ /cards/`, plus images at the root, and only with a known file type. This keeps `/status`, `/auth`, `/api`, skins, `sw.js`, `plonk.apk` and anything generated on the network, whatever a manifest says. The rules live in `BundlePaths.kt` and are mirrored in `tools/fetch-bundle.mjs`.
 
