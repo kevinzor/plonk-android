@@ -16,6 +16,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
@@ -46,7 +47,8 @@ import org.json.JSONObject
  * Game-safety rules this activity enforces (the stock webshell template broke each one):
  * - no pull-to-refresh (a downward drag mid-fight must never reload the game);
  * - rotation, folds, keyboards and theme changes never recreate the activity (no reload);
- * - Android back closes the top game window first, and only a second press leaves;
+ * - Android back closes the top game window first, and only a second press leaves (to the
+ *   background, so the game stays warm);
  * - page zoom is off (the game has its own pinch zoom);
  * - if Android kills the WebView renderer (e.g. while a wallet app is in front) the app rebuilds
  *   the WebView and reloads instead of crashing;
@@ -70,7 +72,8 @@ class MainActivity : ComponentActivity() {
 
     private var firstPaintDone = false
     private val createdAt = SystemClock.uptimeMillis()
-    private var lastBackAt = 0L
+    private lateinit var backCallback: OnBackPressedCallback
+    private val armBack = Runnable { backCallback.isEnabled = true }
 
     /** When the renderer died recently (elapsedRealtime), oldest first. */
     private val rendererDeaths = ArrayDeque<Long>()
@@ -140,7 +143,7 @@ class MainActivity : ComponentActivity() {
         val link = if (savedInstanceState == null) links.fromIntent(intent) else null
         loads.loading()
         newWebView().loadUrl(link?.url?.toString() ?: startUrl)
-        onBackPressedDispatcher.addCallback(this) { handleBack() }
+        backCallback = onBackPressedDispatcher.addCallback(this) { handleBack() }
     }
 
     /** A link while the game is running (the activity is singleTask). See [GameLinks.deliver]. */
@@ -329,21 +332,26 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Back: let the game close its top window (window.plonkBack, returns true if it closed one).
-     * Older game builds without plonkBack get a synthetic Escape, which does the same job.
-     * At the world root, a second back within 2 s leaves the app.
+     * Older game builds without plonkBack get a synthetic Escape, and count as "closed" if it
+     * changed anything on screen.
+     *
+     * At the world root the first press only warns. For the next [EXIT_WINDOW_MS] this callback
+     * steps aside, so the second press is the system's own back: Android plays the predictive
+     * back-to-home animation and, on 12+, keeps the game warm in the background instead of
+     * finishing it, so coming back resumes the session rather than cold-loading it.
      */
     private fun handleBack() {
-        val wv = webView ?: return finish()
-        if (loads.isShowingProblem) return finish()
+        val wv = webView
+        if (wv == null || loads.isShowingProblem) {
+            moveTaskToBack(true)
+            return
+        }
         wv.evaluateJavascript(BACK_JS) { result ->
             if (result?.contains("closed") == true) return@evaluateJavascript
-            val now = SystemClock.uptimeMillis()
-            if (now - lastBackAt < 2000) {
-                finish()
-            } else {
-                lastBackAt = now
-                Toast.makeText(this, R.string.press_back_again, Toast.LENGTH_SHORT).show()
-            }
+            Toast.makeText(this, R.string.press_back_again, Toast.LENGTH_SHORT).show()
+            backCallback.isEnabled = false
+            root.removeCallbacks(armBack)
+            root.postDelayed(armBack, EXIT_WINDOW_MS)
         }
     }
 
@@ -371,10 +379,26 @@ class MainActivity : ComponentActivity() {
         const val CRASH_LIMIT = 2
         const val CRASH_WINDOW_MS = 120_000L
 
+        const val EXIT_WINDOW_MS = 2000L
+
+        /**
+         * 'closed' if the game closed something, else 'root'. The Escape fallback watches the DOM
+         * while the game handles the key: a real attribute or child change means a window (or a
+         * target) was closed. Writes that leave a value as it was don't count.
+         */
         const val BACK_JS = """(function(){
   try { if (typeof window.plonkBack === 'function') return window.plonkBack() ? 'closed' : 'root'; } catch (e) {}
-  try { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); } catch (e) {}
-  return 'escape';
+  var changed = false;
+  try {
+    var mo = new MutationObserver(function(){});
+    mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeOldValue: true });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+    changed = mo.takeRecords().some(function (r) {
+      return r.type !== 'attributes' || r.target.getAttribute(r.attributeName) !== r.oldValue;
+    });
+    mo.disconnect();
+  } catch (e) {}
+  return changed ? 'closed' : 'root';
 })()"""
     }
 }
