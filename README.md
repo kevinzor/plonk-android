@@ -6,21 +6,24 @@ The game server and web client live in a separate (private) repo. This app gives
 
 ## What the app does
 
+Everything below is built in this repo. Rows marked **needs the game page** work as soon as the web client sends the message or reads the param. The app ships them now, and pages that don't use them behave exactly as on the website. What is still pending on the web and server side is listed in [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md#pending-work).
+
 | | |
 |---|---|
-| **Game files in the APK** | The game's code, models, icons and sounds ship inside the app. Each file is served from the APK while its sha256 still matches the live server's manifest; only changed files are downloaded. A deploy reaches the app on the next page load, with no app update, and with no network at all the app still opens the game. See [docs/BUNDLE.md](docs/BUNDLE.md). |
-| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. If no wallet app is installed, the page can list wallets (`wallets`) and send the player to the dApp Store listing (`getWallet`) instead of a dead button. |
+| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur`, so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. If no wallet app is installed, the page can list wallets (`wallets`) and send the player to the dApp Store listing (`getWallet`) instead of a dead button (**needs the game page**). |
+| **Game files in the APK** | The game's code, models, icons and sounds can ship inside the app (`FETCH_BUNDLE=1`). Each file is served from the APK while its sha256 still matches the live server's manifest, and only changed files are downloaded. The plan is made per document, so old and new code never mix. With no network at all, the app opens the game from the APK, and once the network is back it moves the player onto the live game. Needs the server's `/app/manifest` (pending); until then the app streams everything like the website. See [docs/BUNDLE.md](docs/BUNDLE.md). |
 | **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
-| **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
-| **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
-| **Loading and offline screens** | While the game loads, the splash hands over to the PLONK logo with a slim gold load bar, never a browser page. If the game can't load, a branded screen says why (offline, no answer, or the server restarting) and gets the player back in by itself: it reloads as soon as the phone is back online (`ConnectivityManager` network callback), and otherwise retries on a short countdown. Nothing retries while the app is in the background. |
-| **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
-| **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
-| **Game alerts** | The page can turn boss spawns, payouts, party and trade invites and whispers into Android notifications while the game is off screen (on screen, the game shows them itself). Each kind is its own channel under "Game alerts", so players can mute one kind in system settings. The Android 13 permission prompt appears only when the game asks for it. Tapping an alert resumes the running game, and opening the game clears the shade. **Limit:** alerts come from the running page, so they cover the first seconds after switching away (a trip to the wallet, a quick reply), not hours later: Android 14+ freezes a background app. Alerts while away need a server feed or push (pending, see [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md)). |
-| **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for referral invites and brag text, and tells the page which app the player picked or that they cancelled. |
-| **Deep links** | Verified App Links for `https://play.plonk.land`, referral links `https://plonk.land/?ref=...`, and `plonk://`. They open inside the game with `?ref=` / `?kol=` kept. If the game is already running, the link goes to the page as an event instead of reloading it, so a fight or trade isn't lost. See [Links into the game](#links-into-the-game). |
-| **Launcher shortcuts** | Long-press the icon for **Bag**, **Market** and **World map**. Each opens that window, in place if the game is already running (no reload). |
-| **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
+| **Game-safe WebView** | No pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards, theme, bold text and SIM or roaming changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
+| **Back button** | Closes the top game window first (`window.plonkBack()`, or a synthetic Escape that counts only if it changed something). At the world root, a second press within 2 s is the system's own back: predictive back-to-home, and the game stays warm in the background. |
+| **Loading and error screens** | The splash hands over to the PLONK logo with a slim gold load bar, never a blank or browser page. If the game can't load, a branded screen says why (offline, no answer, server error or restarting) and gets the player back in by itself: at once when the network returns (`ConnectivityManager` callback), otherwise on a countdown. A 4xx on a link falls back to the start page. Nothing retries in the background, and the screen may sleep while the error shows. |
+| **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView instead of crashing; in the background it waits until the player returns. A renderer that keeps crashing gets "Plonk stopped unexpectedly" and a growing countdown, not a loop. |
+| **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page asks which ones this build has (`caps`). Full contract: [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md). |
+| **Haptics** | `haptic` plays the phone's own click, tick and heavy-click effects for hits, loot and errors, rate-limited for combat (**needs the game page**). |
+| **Game alerts** | The page can turn boss spawns, payouts, party and trade invites and whispers into Android notifications while the game is off screen (on screen, the game shows them itself). Each kind is its own channel under "Game alerts", so players can mute one kind in system settings. The Android 13 prompt appears only when the game asks for it. Tapping an alert resumes the running game, and opening the game clears the shade (**needs the game page**). **Limit:** alerts come from the running page, so they cover the first seconds after switching away (a trip to the wallet, a quick reply), not hours later: Android 14+ freezes a background app. Alerts while away need a server feed or push (pending). |
+| **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for referral invites and brag text, and tells the page which app the player picked or that they cancelled (**needs the game page**). |
+| **Deep links** | App Links for `https://play.plonk.land`, referral links `https://plonk.land/?ref=...`, and `plonk://`. They open inside the game with `?ref=` / `?kol=` / `?open=` kept and checked. If the game is already running, the link goes to the page as an event instead of a reload, so a fight or trade isn't lost; a page that doesn't handle it gets a normal load. Verification needs `assetlinks.json` on both hosts (pending). See [Links into the game](#links-into-the-game). |
+| **Launcher shortcuts** | Long-press the icon for **Bag**, **Market** and **World map**. They open `?open=bag` / `market` / `map`, or send the running game the `open` event (the game page has to open the window: **needs the game page**). |
+| **Links and files** | Only https `play.plonk.land` stays in the app; `http://` game links are upgraded to https, other sites open in the system browser, and popups need a tap. `intent:` links are reduced to implicit, browsable targets. File pickers (skin upload) use the system picker. |
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
 
@@ -29,12 +32,14 @@ The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The
 ```
 app/src/main/java/land/plonk/app/
   MainActivity.kt        full-screen game activity: insets, back, renderer recovery, file chooser
-  PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
-  PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
+  PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, https game origin only)
+  PlonkChromeClient.kt   progress, debug console, popups (tap only) to the system browser, file chooser
   GameLinks.kt           deep links: strict parsing onto the game origin, in-place delivery to a running game
   ShortcutActivity.kt    invisible trampoline for launcher shortcuts (keeps a running game alive)
   LoadController.kt      loader and error screen state, auto-retry (backoff, network back, app resumed)
-  NetworkWatcher.kt      default-network callback while the error screen is up
+  NetworkWatcher.kt      default-network callback while the error screen or the offline snapshot is up
+  OfflineCopyWatch.kt    moves a page opened from the offline snapshot onto the live game when online
+  PageEvents.kt          app-to-page 'plonknative' events (links, network back)
   ui/
     StatusScreen.kt      the branded loading / can't-load screen
     PlonkLogoView.kt     the splash logo, vignetted into the page colour
@@ -61,12 +66,13 @@ app/src/main/res/        icons, splash, theme, launcher shortcuts, network secur
 app/src/main/assets/     the game bundle, generated at build time and not committed
 tools/fetch-bundle.mjs   fills the game bundle from the live server (or a local checkout)
 scripts/build.sh         memory-capped build (see below)
+docs/APP_BRIDGE.md       the page <-> app contract: every message, event and link, and pending work
 docs/BUNDLE.md           how the game bundle works, and the server's /app/manifest contract
 ```
 
 ## Native bridge
 
-The page talks to the app with JSON strings. Every message has a type `t`. Replies carry the same `t`, plus the request's `id` if it sent one.
+The full contract, with examples for the game page, is in [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md). In short: the page talks to the app with JSON strings. Every message has a type `t`. Replies carry the same `t`, plus the request's `id` if it sent one.
 
 ```js
 PlonkNative.onmessage = (e) => { const m = JSON.parse(e.data); /* m.t, m.id, ... */ };
@@ -91,6 +97,8 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 | `bundle` | | `{ mode, bundleBuild, liveBuild, bundled, served, servedBytes, network }`: how this page load used the APK's game files. mode is `live`, `offline` or `network` |
 
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
+
+The app also sends the page news it didn't ask for, as a cancelable `plonknative` event on `window`: `{ t: 'open', ... }` for a link tapped while the game runs, and `{ t: 'online', mode: 'offline' }` when a page opened from the offline snapshot can go live. If no listener calls `preventDefault()`, the app loads the link or reloads the page itself.
 
 **Adding a feature.** Write a `BridgeHandler` that names its `types`, then add one line to `bridgeHandlers()` in `MainActivity`. A handler that needs a permission prompt or another app uses `BridgeHost`. A handler that needs a result launcher registers it in its constructor. The app refuses to start if two handlers claim the same type.
 
