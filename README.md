@@ -12,6 +12,7 @@ The game server and web client live in a separate (private) repo. This app gives
 | **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
 | **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
 | **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
+| **Loading and offline screens** | While the game loads, the splash hands over to the PLONK logo with a slim gold load bar, never a browser page. If the game can't load, a branded screen says why (offline, no answer, or the server restarting) and gets the player back in by itself: it reloads as soon as the phone is back online (`ConnectivityManager` network callback), and otherwise retries on a short countdown. Nothing retries while the app is in the background. |
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
 | **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
@@ -25,6 +26,12 @@ app/src/main/java/land/plonk/app/
   MainActivity.kt        full-screen game activity: insets, back, renderer recovery, file chooser
   PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
   PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
+  LoadController.kt      loader and error screen state, auto-retry (backoff, network back, app resumed)
+  NetworkWatcher.kt      default-network callback while the error screen is up
+  ui/
+    StatusScreen.kt      the branded loading / can't-load screen
+    PlonkLogoView.kt     the splash logo, vignetted into the page colour
+    LoadingBar.kt        slim eased load bar with a moving highlight
   bridge/
     NativeBridge.kt      window.PlonkNative: origin lock, routing by message type, built-in caps
     BridgeHandler.kt     the interface one bridge feature implements

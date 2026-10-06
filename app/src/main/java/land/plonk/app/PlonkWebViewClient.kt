@@ -8,6 +8,7 @@ import android.util.Log
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.net.toUri
@@ -25,7 +26,8 @@ open class PlonkWebViewClient(
     private val context: Context,
     private val scopeHost: String,
     private val onMainFrameFinished: (WebView, String?) -> Unit,
-    private val onMainFrameError: () -> Unit,
+    /** The game page failed to load: `null` for a network error, else the HTTP status. */
+    private val onMainFrameError: (httpStatus: Int?) -> Unit,
     private val onRendererGone: (WebView) -> Unit,
 ) : WebViewClient() {
     override fun shouldOverrideUrlLoading(
@@ -83,7 +85,16 @@ open class PlonkWebViewClient(
         error: WebResourceError?,
     ) {
         super.onReceivedError(view, request, error)
-        if (request?.isForMainFrame == true) onMainFrameError()
+        if (request?.isForMainFrame == true) onMainFrameError(null)
+    }
+
+    override fun onReceivedHttpError(
+        view: WebView?,
+        request: WebResourceRequest?,
+        errorResponse: WebResourceResponse?,
+    ) {
+        super.onReceivedHttpError(view, request, errorResponse)
+        if (request?.isForMainFrame == true) onMainFrameError(errorResponse?.statusCode ?: 0)
     }
 
     /**

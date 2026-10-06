@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">Plonk</string>
-    <string name="cant_reach">Can\'t reach Plonk.\nCheck your connection.</string>
-    <string name="retry">Retry</string>
+    <string name="retry">Try again</string>
     <string name="press_back_again">Press back again to leave Plonk</string>
 </resources>

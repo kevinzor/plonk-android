@@ -1,11 +1,9 @@
 package land.plonk.app
 
 import android.annotation.SuppressLint
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -14,10 +12,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
@@ -36,6 +31,7 @@ import land.plonk.app.bridge.HapticsHandler
 import land.plonk.app.bridge.KeepAwakeHandler
 import land.plonk.app.bridge.NativeBridge
 import land.plonk.app.bridge.WalletHandler
+import land.plonk.app.ui.StatusScreen
 
 /**
  * Plonk for Android: a full-screen game WebView on https://play.plonk.land.
@@ -46,11 +42,14 @@ import land.plonk.app.bridge.WalletHandler
  * - Android back closes the top game window first, and only a second press leaves;
  * - page zoom is off (the game has its own pinch zoom);
  * - if Android kills the WebView renderer (e.g. while a wallet app is in front) the app rebuilds
- *   the WebView and reloads instead of crashing.
+ *   the WebView and reloads instead of crashing;
+ * - the player never sees a browser error page: loading and failures get the branded
+ *   [StatusScreen], which retries by itself (see [LoadController]).
  */
 class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
-    private lateinit var errorView: View
+    private lateinit var status: StatusScreen
+    private lateinit var loads: LoadController
     private var webView: WebView? = null
     private lateinit var bridge: NativeBridge
     private lateinit var startUrl: String
@@ -70,8 +69,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        // Hold the splash until the game paints, but never longer than 6 s.
-        splash.setKeepOnScreenCondition { !firstPaintDone && SystemClock.uptimeMillis() - createdAt < 6000 }
+        // Hold the splash for a fast load, then hand over to the branded loader, which shows progress.
+        splash.setKeepOnScreenCondition { !firstPaintDone && SystemClock.uptimeMillis() - createdAt < SPLASH_MAX_MS }
+        splash.setOnExitAnimationListener { provider ->
+            provider.view
+                .animate()
+                .alpha(0f)
+                .setDuration(SPLASH_FADE_MS)
+                .withEndAction { provider.remove() }
+                .start()
+        }
 
         startUrl = BuildConfig.SOLANA_MOBILE_URL
         scopeHost = startUrl.toUri().host.orEmpty()
@@ -94,11 +101,14 @@ class MainActivity : ComponentActivity() {
             WindowInsetsCompat.CONSUMED
         }
         setContentView(root)
-        errorView = buildErrorView().also { root.addView(it) }
+        status = StatusScreen(this).also { root.addView(it) }
+        loads = LoadController(status, this, ::reloadGame).apply { onSettled = { firstPaintDone = true } }
+        lifecycle.addObserver(loads)
         hideSystemBars()
 
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
+        loads.loading()
         newWebView().loadUrl(startUrl)
         onBackPressedDispatcher.addCallback(this) { handleBack() }
     }
@@ -168,7 +178,7 @@ class MainActivity : ComponentActivity() {
 
                 webChromeClient =
                     PlonkChromeClient(
-                        onProgress = { p -> if (p >= 80) firstPaintDone = true },
+                        onProgress = { p -> loads.progress(p) },
                         onFileChooser = { cb, params -> openFileChooser(cb, params) },
                         isDebug = BuildConfig.DEBUG,
                     )
@@ -176,15 +186,8 @@ class MainActivity : ComponentActivity() {
                     PlonkWebViewClient(
                         context = this@MainActivity,
                         scopeHost = scopeHost,
-                        onMainFrameFinished = { _, _ ->
-                            firstPaintDone = true
-                            errorView.visibility = View.GONE
-                        },
-                        onMainFrameError = {
-                            firstPaintDone = true
-                            errorView.visibility = View.VISIBLE
-                            errorView.bringToFront()
-                        },
+                        onMainFrameFinished = { _, _ -> loads.finished() },
+                        onMainFrameError = { httpStatus -> loads.failed(httpStatus) },
                         onRendererGone = { dead -> rebuildAfterRendererLoss(dead) },
                     )
                 setDownloadListener { url, _, _, _, _ ->
@@ -212,7 +215,14 @@ class MainActivity : ComponentActivity() {
         root.removeView(dead)
         dead.destroy()
         webView = null
+        loads.loading()
         newWebView().loadUrl(startUrl)
+    }
+
+    /** Retry after a failed load: reload the page that failed, or the game if nothing loaded. */
+    private fun reloadGame() {
+        val wv = webView ?: newWebView()
+        if (wv.url.isNullOrEmpty()) wv.loadUrl(startUrl) else wv.reload()
     }
 
     /**
@@ -222,7 +232,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleBack() {
         val wv = webView ?: return finish()
-        if (errorView.visibility == View.VISIBLE) return finish()
+        if (loads.isShowingProblem) return finish()
         wv.evaluateJavascript(BACK_JS) { result ->
             if (result?.contains("closed") == true) return@evaluateJavascript
             val now = SystemClock.uptimeMillis()
@@ -251,40 +261,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun buildErrorView(): View {
-        val dp = resources.displayMetrics.density
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(BG)
-            visibility = View.GONE
-            isClickable = true
-            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            addView(
-                TextView(context).apply {
-                    setText(R.string.cant_reach)
-                    setTextColor(Color.WHITE)
-                    textSize = 18f
-                    gravity = Gravity.CENTER
-                },
-            )
-            addView(
-                Button(context).apply {
-                    setText(R.string.retry)
-                    setOnClickListener {
-                        errorView.visibility = View.GONE
-                        webView?.reload() ?: newWebView().loadUrl(startUrl)
-                    }
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (20 * dp).toInt()
-                },
-            )
-        }
-    }
-
     private companion object {
         const val BG = 0xFF06070C.toInt()
+        const val SPLASH_MAX_MS = 1500L
+        const val SPLASH_FADE_MS = 200L
 
         const val BACK_JS = """(function(){
   try { if (typeof window.plonkBack === 'function') return window.plonkBack() ? 'closed' : 'root'; } catch (e) {}
