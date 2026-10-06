@@ -70,7 +70,21 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="plonk" />
             </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Launcher shortcut trampoline: its own task, so the shortcut's CLEAR_TASK can't wipe
+             a running game. Not exported; the launcher starts shortcuts as this app. -->
+        <activity
+            android:name=".ShortcutActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
     </application>
 
 </manifest>

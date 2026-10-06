@@ -4,4 +4,6 @@
     <color name="plonk_primary">#FF23251E</color>
     <color name="launcher_icon_background">#FF22241E</color>
     <color name="splash_background">#FF06070C</color>
+    <!-- Gold of the PLONK wordmark, for launcher shortcut glyphs. -->
+    <color name="shortcut_glyph">#FFE9C46A</color>
 </resources>

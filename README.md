@@ -16,6 +16,7 @@ The game server and web client live in a separate (private) repo. This app gives
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
 | **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for referral invites and brag text, and tells the page which app the player picked or that they cancelled. |
 | **Deep links** | Verified App Links for `https://play.plonk.land`, referral links `https://plonk.land/?ref=...`, and `plonk://`. They open inside the game with `?ref=` / `?kol=` kept. If the game is already running, the link goes to the page as an event instead of reloading it, so a fight or trade isn't lost. See [Links into the game](#links-into-the-game). |
+| **Launcher shortcuts** | Long-press the icon for **Bag**, **Market** and **World map**. Each opens that window, in place if the game is already running (no reload). |
 | **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
@@ -28,6 +29,7 @@ app/src/main/java/land/plonk/app/
   PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
   PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
   GameLinks.kt           deep links: strict parsing onto the game origin, in-place delivery to a running game
+  ShortcutActivity.kt    invisible trampoline for launcher shortcuts (keeps a running game alive)
   bridge/
     NativeBridge.kt      window.PlonkNative: origin lock, routing by message type, built-in caps
     BridgeHandler.kt     the interface one bridge feature implements
@@ -36,7 +38,7 @@ app/src/main/java/land/plonk/app/
     HapticsHandler.kt    haptic
     CoreHandlers.kt      exit, awake, info
     ShareHandler.kt      share (Android share sheet)
-app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
+app/src/main/res/        icons, splash, theme, launcher shortcuts, network security config (cleartext only for MWA's loopback)
 scripts/build.sh         memory-capped build (see below)
 ```
 
@@ -70,6 +72,9 @@ A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored
 | `https://play.plonk.land/...` | that page; path and query kept (App Link) |
 | `https://plonk.land/?ref=CODE&kol=CODE` | the game, with the referral |
 | `plonk://play`, `plonk://bag`, `plonk://market`, `plonk://map` | the game, or that window; `?ref=` / `?kol=` allowed |
+| Launcher shortcuts Bag / Market / World map | `plonk://bag`, `plonk://market`, `plonk://map` |
+
+The shortcuts start `ShortcutActivity` rather than the game. Android launches static shortcuts with `FLAG_ACTIVITY_CLEAR_TASK`, which would destroy a running game. The trampoline lives in its own task and hands the link to the game.
 
 Every link is rebuilt as a URL on the game origin, and the start URL's `src=app` is always kept. Hosts must match exactly, over https, with no user info and no port other than 443. `open` must be `bag`, `market` or `map`. `ref` and `kol` must be short codes (`[A-Za-z0-9_.@-]`, at most 64 characters). Anything invalid is dropped. Links from Recents are not replayed.
 
@@ -141,5 +146,7 @@ The app is forked from the **Solana Mobile webshell template** (`solana-mobile` 
 - pull-to-refresh and page zoom removed
 - broader `configChanges`
 - back handling, renderer-crash recovery, immersive insets, the native bridge, haptics, file chooser, and Plonk branding
+
+The launcher shortcut glyphs are from Material Icons (Apache-2.0).
 
 The template's license is in [`LICENSE-webshell-template`](LICENSE-webshell-template).
