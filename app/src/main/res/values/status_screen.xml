@@ -12,6 +12,9 @@
     <string name="status_updating_title">Plonk is updating</string>
     <string name="status_updating_body">The realm is restarting with something new. We\'ll bring you back as soon as it\'s ready.</string>
 
+    <string name="status_crashed_title">Plonk stopped unexpectedly</string>
+    <string name="status_crashed_body">The game closed by itself a few times in a row. We\'ll start it again in a moment.</string>
+
     <string name="status_waiting_for_network">Waiting for a connection…</string>
     <string name="status_retry_in">Trying again in %1$d s</string>
 </resources>

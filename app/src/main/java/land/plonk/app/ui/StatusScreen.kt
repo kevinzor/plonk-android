@@ -43,6 +43,9 @@ class StatusScreen(
 
         /** The server answered that it is restarting (HTTP 502-504), or the game said so. */
         UPDATING(R.string.status_updating_title, R.string.status_updating_body),
+
+        /** The game's renderer died again and again: wait a little instead of looping. */
+        CRASHED(R.string.status_crashed_title, R.string.status_crashed_body),
     }
 
     /** Called when the player taps Retry. */

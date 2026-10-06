@@ -24,6 +24,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import land.plonk.app.bridge.AppInfoHandler
 import land.plonk.app.bridge.BridgeHandler
 import land.plonk.app.bridge.BridgeHost
@@ -70,6 +71,12 @@ class MainActivity : ComponentActivity() {
     private var firstPaintDone = false
     private val createdAt = SystemClock.uptimeMillis()
     private var lastBackAt = 0L
+
+    /** When the renderer died recently (elapsedRealtime), oldest first. */
+    private val rendererDeaths = ArrayDeque<Long>()
+
+    /** The renderer died while the app was in the background: build the game again on return. */
+    private var rebuildOnStart = false
 
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
     private val pickFile =
@@ -147,6 +154,15 @@ class MainActivity : ComponentActivity() {
         } else {
             links.deliver(wv, link)
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (rebuildOnStart && webView == null && !loads.isShowingProblem) {
+            loads.loading()
+            newWebView().loadUrl(startUrl)
+        }
+        rebuildOnStart = false
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -251,6 +267,7 @@ class MainActivity : ComponentActivity() {
         bridge.attach(wv)
         root.addView(wv, 0)
         webView = wv
+        rebuildOnStart = false
         return wv
     }
 
@@ -260,12 +277,29 @@ class MainActivity : ComponentActivity() {
         wv.destroy()
     }
 
+    /**
+     * The renderer died (see PlonkWebViewClient.onRenderProcessGone). Swap in a new WebView and
+     * load the game, but:
+     * - in the background, only drop the dead one, and load again when the player returns, so a
+     *   low-memory kill behind a wallet app doesn't reload the whole game (and get killed again);
+     * - after [CRASH_LIMIT] deaths within [CRASH_WINDOW_MS] (a bad deploy, a GPU driver crash),
+     *   say so and retry on the loader's backoff instead of looping with an endless load bar.
+     */
     private fun rebuildAfterRendererLoss(dead: WebView) {
         if (dead !== webView) return
         destroyWebView(dead)
         webView = null
-        loads.loading()
-        newWebView().loadUrl(startUrl)
+        val now = SystemClock.elapsedRealtime()
+        rendererDeaths.addLast(now)
+        while (now - rendererDeaths.first() > CRASH_WINDOW_MS) rendererDeaths.removeFirst()
+        when {
+            rendererDeaths.size >= CRASH_LIMIT -> loads.crashed(rendererDeaths.size - CRASH_LIMIT + 1)
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) -> rebuildOnStart = true
+            else -> {
+                loads.loading()
+                newWebView().loadUrl(startUrl)
+            }
+        }
     }
 
     /**
@@ -331,6 +365,9 @@ class MainActivity : ComponentActivity() {
         const val BG = 0xFF06070C.toInt()
         const val SPLASH_MAX_MS = 1500L
         const val SPLASH_FADE_MS = 200L
+
+        const val CRASH_LIMIT = 2
+        const val CRASH_WINDOW_MS = 120_000L
 
         const val BACK_JS = """(function(){
   try { if (typeof window.plonkBack === 'function') return window.plonkBack() ? 'closed' : 'root'; } catch (e) {}

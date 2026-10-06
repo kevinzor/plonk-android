@@ -22,6 +22,7 @@ import land.plonk.app.ui.StatusScreen.Problem
  *   countdown, so a server restart or a deploy heals by itself.
  * - Nothing is retried while the app is in the background. Coming back to the app retries at
  *   once, which covers "went to Settings and turned Wi-Fi on".
+ * - A renderer that keeps crashing gets the same countdown ([crashed]), never a tight loop.
  *
  * [serverUpdating] is the hook for the game page to say it is in maintenance; a future
  * `{ t: 'status', state: 'updating' }` bridge message only has to call it.
@@ -92,6 +93,17 @@ class LoadController(
     fun serverUpdating() {
         failedThisLoad = true
         fail(Problem.UPDATING)
+    }
+
+    /**
+     * The game's renderer keeps dying (see MainActivity). Show it and back off: [repeats] counts
+     * the recent deaths beyond the first, and stretches the wait even though a load succeeded in
+     * between, because a page that loads and then crashes is not fixed.
+     */
+    fun crashed(repeats: Int) {
+        failedThisLoad = true
+        attempt = maxOf(attempt, repeats - 1)
+        fail(Problem.CRASHED)
     }
 
     /** True while the error screen is up (Android back should leave rather than reach the page). */
