@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tints the status bar coin and the notification header. Matches the gold O in the logo. -->
+    <color name="plonk_alert_gold">#FFE8B33A</color>
+
+    <string name="alerts_group">Game alerts</string>
+    <string name="alerts_group_desc">What happens in Plonk while the app is closed or in the background.</string>
+
+    <string name="alerts_boss">Boss spawns</string>
+    <string name="alerts_boss_desc">A world boss has appeared.</string>
+    <string name="alerts_payout">Payouts</string>
+    <string name="alerts_payout_desc">$PLONK rewards and market sales paid to your wallet.</string>
+    <string name="alerts_invite">Party and trade invites</string>
+    <string name="alerts_invite_desc">Another player wants you in their party or to trade.</string>
+    <string name="alerts_whisper">Whispers</string>
+    <string name="alerts_whisper_desc">Private messages from other players.</string>
+    <string name="alerts_other">Other alerts</string>
+    <string name="alerts_other_desc">Anything else the game wants you to know.</string>
+
+    <!-- Shown instead of the real text on a locked screen when lock-screen privacy is on. -->
+    <string name="alerts_private_payout">You received a payout</string>
+    <string name="alerts_private_whisper">New whisper</string>
+</resources>
