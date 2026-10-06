@@ -37,6 +37,7 @@ import land.plonk.app.bridge.ShareHandler
 import land.plonk.app.bridge.WalletHandler
 import land.plonk.app.bundle.GameBundle
 import land.plonk.app.ui.StatusScreen
+import org.json.JSONObject
 
 /**
  * Plonk for Android: a full-screen game WebView on https://play.plonk.land.
@@ -64,6 +65,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var startUrl: String
     private lateinit var scopeHost: String
     private lateinit var links: GameLinks
+    private lateinit var offlineCopy: OfflineCopyWatch
 
     private var firstPaintDone = false
     private val createdAt = SystemClock.uptimeMillis()
@@ -121,6 +123,8 @@ class MainActivity : ComponentActivity() {
         bundle = GameBundle(this, origin = "https://$scopeHost")
         bundle.prefetch()
         bundle.interceptServiceWorkers()
+        offlineCopy = OfflineCopyWatch(this, ::leaveOfflineCopy)
+        lifecycle.addObserver(offlineCopy)
 
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
@@ -225,6 +229,7 @@ class MainActivity : ComponentActivity() {
                         onMainFrameFinished = { _, _ ->
                             loads.finished()
                             bundle.logPageSummary()
+                            if (bundle.isOfflineCopy) offlineCopy.arm() else offlineCopy.disarm()
                         },
                         onMainFrameError = { httpStatus -> loads.failed(httpStatus) },
                         onRendererGone = { dead -> rebuildAfterRendererLoss(dead) },
@@ -258,6 +263,19 @@ class MainActivity : ComponentActivity() {
         webView = null
         loads.loading()
         newWebView().loadUrl(startUrl)
+    }
+
+    /**
+     * The network is back while the page runs from the offline snapshot. Tell the page; if it
+     * doesn't take care of it (preventDefault), reload it so the live game takes over.
+     */
+    private fun leaveOfflineCopy() {
+        val wv = webView ?: return
+        PageEvents.dispatch(wv, JSONObject().put("t", "online").put("mode", "offline")) { handled ->
+            if (handled || wv !== webView) return@dispatch
+            loads.loading()
+            wv.reload()
+        }
     }
 
     /** Retry after a failed load: reload the page that failed, or the game if nothing loaded. */

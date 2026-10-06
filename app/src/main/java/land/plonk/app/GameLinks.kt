@@ -125,9 +125,9 @@ class GameLinks(
             return
         }
         if (!link.hasPayload) return // already on the game: bringing the app forward is enough
-        webView.evaluateJavascript(dispatchScript(link.toEventDetail())) { result ->
+        PageEvents.dispatch(webView, link.toEventDetail()) { handled ->
             // Skip the fallback if this WebView was replaced (renderer loss) in the meantime.
-            if (result != "\"handled\"" && webView.isAttachedToWindow) webView.loadUrl(link.url.toString())
+            if (!handled && webView.isAttachedToWindow) webView.loadUrl(link.url.toString())
         }
     }
 
@@ -219,12 +219,5 @@ class GameLinks(
         val PARAM_NAME = Regex("^[A-Za-z0-9_.-]{1,40}$")
         val SAFE_PATH = Regex("^/[A-Za-z0-9._~/-]{0,200}$")
         val SAFE_FRAGMENT = Regex("^[A-Za-z0-9._~/=&-]{1,200}$")
-
-        /** Dispatches the event; answers "handled" only if a listener called preventDefault(). */
-        fun dispatchScript(detail: JSONObject) =
-            """(function(d){try{
-  var e = new CustomEvent('plonknative', { detail: d, cancelable: true });
-  return window.dispatchEvent(e) ? 'unhandled' : 'handled';
-}catch(x){ return 'error'; }})($detail)"""
     }
 }

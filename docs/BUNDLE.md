@@ -21,7 +21,7 @@ The plan is chosen once per document, when the main frame requests it, so the sh
 | Plan | When | What comes from the APK |
 |---|---|---|
 | `live` | The server's manifest answered (fetched at launch, reused for 15 s, refreshed with `If-None-Match` on each later page load). | Every bundled file whose sha256 equals the server's. Changed, new and unlisted files come from the network. |
-| `offline` | The phone has no network at all. | The whole bundle, as one consistent snapshot. The game opens, shows its own reconnecting screen, and reloads itself when the network returns. |
+| `offline` | The phone has no network at all. | The whole bundle, as one consistent snapshot. The game opens and shows its own reconnecting screen. When the network is back, the app reloads it onto the live game (see Limits). |
 | `network` | Online, but no manifest: the endpoint is missing (404), slow (over 2.5 s), or broken. | Nothing. Every request goes to the network, exactly like the website. |
 
 There is no plan that guesses. Without a fresh answer from the server, the app never mixes old bundled code with a newer page from the network. The last good manifest is cached on disk only so that the next check can be a 304.
@@ -170,5 +170,5 @@ export function appManifest(publicDir) {
 ## Limits
 
 - The bundle adds its size to the APK: about 40 MB of files for the current game, mostly models and icons.
-- On a phone that has no network at all, the bundle can be older than the live game. The offline snapshot is only for opening the app. When the network returns, the game reloads and the `live` plan takes over.
+- On a phone that has no network at all, the bundle can be older than the live game. The offline snapshot is only for opening the app. When the network comes back (validated), the app tells the page with a cancelable `plonknative` event `{ t: 'online', mode: 'offline' }`. If no listener calls `preventDefault()`, the app reloads the page, so the `live` plan takes over and old bundled code never keeps talking to a newer server. See [APP_BRIDGE.md](APP_BRIDGE.md).
 - Requests from other hosts (wallet sites, Jupiter, CDNs) are never bundled.

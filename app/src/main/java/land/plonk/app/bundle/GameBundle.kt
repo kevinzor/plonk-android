@@ -168,6 +168,9 @@ class GameBundle(
         if (indexLazy.isInitialized() && !index.isEmpty) plan = newPlan(NETWORK_PLAN, index)
     }
 
+    /** True when the current document runs from the offline snapshot. */
+    val isOfflineCopy: Boolean get() = plan.mode == Mode.OFFLINE
+
     /** State for the page and for debugging (`{ t: 'bundle' }` on the bridge). */
     fun status(): Status {
         val idx = if (indexLazy.isInitialized()) index else null

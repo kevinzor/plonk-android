@@ -11,8 +11,9 @@ import android.util.Log
 /**
  * Whether the phone has a usable network, and a nudge when it gets one back.
  *
- * Only registered while the error screen is up (see [LoadController]): the game itself copes
- * with its own socket dropping, so there is no reason to listen while it is running.
+ * Only registered while the error screen is up (see [LoadController]) or while the page is the
+ * APK's offline snapshot (see [OfflineCopyWatch]). A live game copes with its own socket
+ * dropping, so there is no reason to listen while it is running.
  *
  * "Back" means the default network gained internet, or became validated (a captive portal was
  * signed in to). The nudge waits a moment so DNS and routes are ready before the page reloads,
@@ -32,6 +33,9 @@ class NetworkWatcher(
 
     /** True if the default network says it can reach the internet. Live even when not started. */
     val isOnline: Boolean get() = if (registered) online else currentlyOnline()
+
+    /** True if the default network has been checked to really reach the internet. */
+    val isValidated: Boolean get() = if (registered) validated else currentlyValidated()
 
     private val callback =
         object : ConnectivityManager.NetworkCallback() {
