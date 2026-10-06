@@ -79,6 +79,9 @@ class MainActivity : ComponentActivity() {
     /** When the renderer died recently (elapsedRealtime), oldest first. */
     private val rendererDeaths = ArrayDeque<Long>()
 
+    /** A page the app loaded is missing on the server: load this instead once it has finished. */
+    private var notFoundFallback: String? = null
+
     /** The renderer died while the app was in the background: build the game again on return. */
     private var rebuildOnStart = false
 
@@ -159,7 +162,7 @@ class MainActivity : ComponentActivity() {
             loads.loading()
             (wv ?: newWebView()).loadUrl(link.url.toString())
         } else {
-            links.deliver(wv, link)
+            links.deliver(wv, link, beforeLoad = loads::loading)
         }
     }
 
@@ -247,12 +250,8 @@ class MainActivity : ComponentActivity() {
                     PlonkWebViewClient(
                         context = this@MainActivity,
                         scopeHost = scopeHost,
-                        onMainFrameFinished = { _, _ ->
-                            loads.finished()
-                            bundle.logPageSummary()
-                            if (bundle.isOfflineCopy) offlineCopy.arm() else offlineCopy.disarm()
-                        },
-                        onMainFrameError = { httpStatus -> loads.failed(httpStatus) },
+                        onMainFrameFinished = { view, _ -> onPageDone(view) },
+                        onMainFrameError = ::onMainFrameError,
                         onRendererGone = { dead -> rebuildAfterRendererLoss(dead) },
                         interceptRequest = bundle::intercept,
                         onMainFrameStarted = bundle::onDocumentStarted,
@@ -307,6 +306,37 @@ class MainActivity : ComponentActivity() {
                 newWebView().loadUrl(startUrl)
             }
         }
+    }
+
+    private fun onPageDone(view: WebView) {
+        val fallback = notFoundFallback
+        if (fallback != null) {
+            notFoundFallback = null
+            loads.loading()
+            view.loadUrl(fallback)
+            return
+        }
+        loads.finished()
+        bundle.logPageSummary()
+        if (bundle.isOfflineCopy) offlineCopy.arm() else offlineCopy.disarm()
+    }
+
+    /**
+     * A main-frame load failed. Network errors and 5xx/429 get the error screen. A 4xx on a load
+     * the app started (an old shared link to a page that is gone) falls back to the game's start
+     * page, keeping the link's referral, instead of showing the server's "Cannot GET" page. A 4xx
+     * on a page the game navigated to itself is the game's business.
+     */
+    private fun onMainFrameError(
+        httpStatus: Int?,
+        url: Uri?,
+    ) {
+        if (httpStatus == null || httpStatus >= 500 || httpStatus == 429) return loads.failed(httpStatus)
+        if (httpStatus !in 400..499 || !loads.isAppLoad) return
+        val start = url?.let(links::atStart)?.url
+        if (start == null || start.path == url.path) return loads.failed(httpStatus)
+        notFoundFallback = start.toString()
+        loads.replacing()
     }
 
     /**

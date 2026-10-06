@@ -16,7 +16,8 @@ import land.plonk.app.ui.StatusScreen.Problem
  * - Loads the app starts (launch, Retry, renderer rebuild) show the branded loader with progress.
  *   Navigations the page makes itself don't, the game has its own transitions for those.
  * - A main-frame failure shows the error screen. Which words it uses depends on why: no network
- *   at all, a network but no answer, or the server saying it is restarting (HTTP 502-504).
+ *   at all, a network but no proper answer (HTTP 5xx, 429...), or the server saying it is
+ *   restarting (HTTP 502-504).
  * - Offline, it waits for [NetworkWatcher] to see a network come back, then reloads.
  * - Online but unanswered, it retries on a backoff (4 s, 8 s, 15 s, then every 30 s) and shows a
  *   countdown, so a server restart or a deploy heals by itself.
@@ -78,19 +79,31 @@ class LoadController(
         if (state == State.LOADING && !failedThisLoad) ready()
     }
 
-    /** The main frame failed. [httpStatus] is set when the server answered with an error. */
+    /**
+     * The main frame failed. [httpStatus] is set when the server answered with an error: 502-504
+     * means it is restarting, any other status (500, a proxy's 429 or 403...) that it isn't
+     * answering properly. Either way the player gets the branded screen and the countdown, never
+     * the server's own error page.
+     */
     fun failed(httpStatus: Int?) {
-        if (httpStatus != null && httpStatus !in SERVER_RESTARTING) return
         // WebView can report one failed load more than once; don't restart the countdown.
         if (failedThisLoad && state == State.FAILED) return
         failedThisLoad = true
         fail(
             when {
-                httpStatus != null -> Problem.UPDATING
-                !network.isOnline -> Problem.OFFLINE
+                httpStatus in SERVER_RESTARTING -> Problem.UPDATING
+                httpStatus == null && !network.isOnline -> Problem.OFFLINE
                 else -> Problem.UNREACHABLE
             },
         )
+    }
+
+    /** True while a load the app started itself (launch, Retry, a link) is still running. */
+    val isAppLoad: Boolean get() = state == State.LOADING
+
+    /** The app will replace the page now loading once it finishes: keep the loader up until then. */
+    fun replacing() {
+        if (state == State.LOADING) failedThisLoad = true
     }
 
     /** The game says it is being updated: cover it and keep checking until it is back. */

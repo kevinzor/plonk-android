@@ -31,8 +31,8 @@ open class PlonkWebViewClient(
     private val context: Context,
     private val scopeHost: String,
     private val onMainFrameFinished: (WebView, String?) -> Unit,
-    /** The game page failed to load: `null` for a network error, else the HTTP status. */
-    private val onMainFrameError: (httpStatus: Int?) -> Unit,
+    /** The game page failed to load: `null` status for a network error, else the HTTP status. */
+    private val onMainFrameError: (httpStatus: Int?, url: Uri?) -> Unit,
     private val onRendererGone: (WebView) -> Unit,
     /** Answer a request locally; the flag is true for a main-frame document request. */
     private val interceptRequest: (WebResourceRequest, Boolean) -> WebResourceResponse? = { _, _ -> null },
@@ -112,7 +112,7 @@ open class PlonkWebViewClient(
         error: WebResourceError?,
     ) {
         super.onReceivedError(view, request, error)
-        if (request?.isForMainFrame == true) onMainFrameError(null)
+        if (request?.isForMainFrame == true) onMainFrameError(null, request.url)
     }
 
     override fun onReceivedHttpError(
@@ -121,7 +121,7 @@ open class PlonkWebViewClient(
         errorResponse: WebResourceResponse?,
     ) {
         super.onReceivedHttpError(view, request, errorResponse)
-        if (request?.isForMainFrame == true) onMainFrameError(errorResponse?.statusCode ?: 0)
+        if (request?.isForMainFrame == true) onMainFrameError(errorResponse?.statusCode ?: 0, request.url)
     }
 
     /**

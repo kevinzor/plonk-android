@@ -112,22 +112,28 @@ class GameLinks(
         }
     }
 
+    /** The game's start page for [uri], keeping only its validated open/ref/kol. */
+    fun atStart(uri: Uri): GameLink = build(startPath, linkParams(uri), fragment = null)
+
     /**
      * Hand [link] to the game in [webView]: in place if the game already shows that page and
-     * takes the event, otherwise by loading the link.
+     * takes the event, otherwise by loading the link. [beforeLoad] runs just before a load, so
+     * the caller can show its loader.
      */
     fun deliver(
         webView: WebView,
         link: GameLink,
+        beforeLoad: () -> Unit = {},
     ) {
-        if (webView.progress < 100 || !link.sameDocumentAs(webView.url)) {
+        val load = {
+            beforeLoad()
             webView.loadUrl(link.url.toString())
-            return
         }
+        if (webView.progress < 100 || !link.sameDocumentAs(webView.url)) return load()
         if (!link.hasPayload) return // already on the game: bringing the app forward is enough
         PageEvents.dispatch(webView, link.toEventDetail()) { handled ->
             // Skip the fallback if this WebView was replaced (renderer loss) in the meantime.
-            if (!handled && webView.isAttachedToWindow) webView.loadUrl(link.url.toString())
+            if (!handled && webView.isAttachedToWindow) load()
         }
     }
 
