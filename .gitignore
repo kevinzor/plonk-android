@@ -14,3 +14,7 @@ local.properties
 .idea
 /app/build
 /*.apk
+
+# Game files packed into the APK, fetched at build time (tools/fetch-bundle.mjs)
+/app/src/main/assets/www/
+/app/src/main/assets/bundled-manifest.json
