@@ -136,8 +136,10 @@ class MainActivity : ComponentActivity() {
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
         // Cold start from a link (App Link, plonk://, shortcut): the link is simply the first page.
+        // A recreated activity (process restored) must not replay the link that first opened it.
+        val link = if (savedInstanceState == null) links.fromIntent(intent) else null
         loads.loading()
-        newWebView().loadUrl(links.fromIntent(intent)?.url?.toString() ?: startUrl)
+        newWebView().loadUrl(link?.url?.toString() ?: startUrl)
         onBackPressedDispatcher.addCallback(this) { handleBack() }
     }
 

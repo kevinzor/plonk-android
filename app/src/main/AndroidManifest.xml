@@ -43,13 +43,16 @@
         android:hardwareAccelerated="true"
         android:largeHeap="true"
         android:theme="@style/Theme.Plonk">
+        <!-- configChanges lists every change Android would otherwise recreate the activity for
+             (bold text, SIM or roaming country, grammatical gender...): a recreation destroys
+             the WebView and drops the player's session. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="fullUser"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|touchscreen|uiMode|colorMode|density|fontScale|fontWeightAdjustment|locale|layoutDirection|grammaticalGender|mcc|mnc"
             android:theme="@style/Theme.Plonk.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
