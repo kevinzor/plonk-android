@@ -31,10 +31,12 @@ import androidx.core.view.WindowInsetsControllerCompat
 import land.plonk.app.bridge.AppInfoHandler
 import land.plonk.app.bridge.BridgeHandler
 import land.plonk.app.bridge.BridgeHost
+import land.plonk.app.bridge.BundleHandler
 import land.plonk.app.bridge.ExitHandler
 import land.plonk.app.bridge.HapticsHandler
 import land.plonk.app.bridge.KeepAwakeHandler
 import land.plonk.app.bridge.NativeBridge
+import land.plonk.app.bundle.GameBundle
 
 /**
  * Plonk for Android: a full-screen game WebView on https://play.plonk.land.
@@ -46,12 +48,16 @@ import land.plonk.app.bridge.NativeBridge
  * - page zoom is off (the game has its own pinch zoom);
  * - if Android kills the WebView renderer (e.g. while a wallet app is in front) the app rebuilds
  *   the WebView and reloads instead of crashing.
+ *
+ * Unchanged game files are served from the APK ([GameBundle]), so a cold start doesn't wait on
+ * megabytes of code and art.
  */
 class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
     private lateinit var errorView: View
     private var webView: WebView? = null
     private lateinit var bridge: NativeBridge
+    private lateinit var bundle: GameBundle
     private lateinit var startUrl: String
     private lateinit var scopeHost: String
 
@@ -96,6 +102,11 @@ class MainActivity : ComponentActivity() {
         errorView = buildErrorView().also { root.addView(it) }
         hideSystemBars()
 
+        // Before the first load: the manifest check runs while the WebView spins up.
+        bundle = GameBundle(this, origin = "https://$scopeHost")
+        bundle.prefetch()
+        bundle.interceptServiceWorkers()
+
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
         newWebView().loadUrl(startUrl)
@@ -114,6 +125,7 @@ class MainActivity : ComponentActivity() {
         }
         webView = null
         bridge.dispose()
+        bundle.close()
         super.onDestroy()
     }
 
@@ -127,6 +139,7 @@ class MainActivity : ComponentActivity() {
             KeepAwakeHandler(host),
             ExitHandler(host),
             AppInfoHandler(),
+            BundleHandler(bundle),
         )
 
     private fun hideSystemBars() {
@@ -177,6 +190,7 @@ class MainActivity : ComponentActivity() {
                         onMainFrameFinished = { _, _ ->
                             firstPaintDone = true
                             errorView.visibility = View.GONE
+                            bundle.logPageSummary()
                         },
                         onMainFrameError = {
                             firstPaintDone = true
@@ -184,6 +198,7 @@ class MainActivity : ComponentActivity() {
                             errorView.bringToFront()
                         },
                         onRendererGone = { dead -> rebuildAfterRendererLoss(dead) },
+                        interceptRequest = bundle::intercept,
                     )
                 setDownloadListener { url, _, _, _, _ ->
                     val scheme = url.toUri().scheme?.lowercase()

@@ -8,6 +8,7 @@ import android.util.Log
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.net.toUri
@@ -20,6 +21,7 @@ import androidx.core.net.toUri
  * - solana-wallet: links launch the wallet app (Mobile Wallet Adapter), then a synthetic blur
  *   tells the MWA JS client that the wallet opened (a WebView never fires blur on its own).
  * - intent: links are sanitized to implicit, browsable targets only.
+ * - [interceptRequest] may answer same-origin game files from the APK (see GameBundle).
  */
 open class PlonkWebViewClient(
     private val context: Context,
@@ -27,6 +29,7 @@ open class PlonkWebViewClient(
     private val onMainFrameFinished: (WebView, String?) -> Unit,
     private val onMainFrameError: () -> Unit,
     private val onRendererGone: (WebView) -> Unit,
+    private val interceptRequest: (WebResourceRequest) -> WebResourceResponse? = { null },
 ) : WebViewClient() {
     override fun shouldOverrideUrlLoading(
         view: WebView,
@@ -68,6 +71,12 @@ open class PlonkWebViewClient(
             }
         }
     }
+
+    /** Runs on a WebView network thread, never the UI thread. Null means "use the network". */
+    override fun shouldInterceptRequest(
+        view: WebView,
+        request: WebResourceRequest,
+    ): WebResourceResponse? = interceptRequest(request)
 
     override fun onPageFinished(
         view: WebView,
