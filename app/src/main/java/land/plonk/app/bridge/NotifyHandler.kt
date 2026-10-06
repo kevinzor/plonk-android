@@ -13,11 +13,19 @@ import org.json.JSONObject
 /**
  * Game alerts (boss spawns, payouts, party and trade invites, whispers) as Android notifications.
  *
- * The WebView keeps the game's socket open for a while after the player switches away, so the
- * page still hears server events. While the game is on screen it shows them itself; once it is
- * not, it hands them to this handler and they land in the notification shade instead of being
- * missed. The app decides what "on screen" means (the activity is at least STARTED), so a
- * notification can never pop over the game the player is looking at.
+ * The page raises these, so they only cover the short time after the player switches away
+ * while the page still runs: a quick trip to the wallet, a reply in a chat app. While the game is
+ * on screen it shows events itself; once it is not, it hands them to this handler and they land
+ * in the notification shade instead of being missed. The app decides what "on screen" means (the
+ * activity is at least STARTED), so a notification can never pop over the game the player is
+ * looking at.
+ *
+ * What this can't do: alerts long after the player left. Nothing keeps the process alive in the
+ * background, so on Android 14+ (every Seeker) the cached-app freezer stops the app and its
+ * WebView renderer within seconds of leaving, and Chromium throttles a hidden page before that.
+ * The socket stalls and no more `notify` messages arrive. Real "while away" alerts need the server
+ * to keep them (e.g. a `/app/alerts?since=` feed polled by a WorkManager job, or push); see
+ * docs/APP_BRIDGE.md.
  *
  * Messages:
  * - `{ t: 'notify', title, body, tag?, kind?, ttl? }` replies `{ shown }`, plus `reason`
