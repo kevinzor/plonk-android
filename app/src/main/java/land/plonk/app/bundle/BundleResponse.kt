@@ -14,6 +14,13 @@ import java.io.InputStream
  * `Content-Length`, correct `Content-Type`) so the page can't tell the difference, except for
  * `X-Plonk-Bundle`, which shows up in the WebView devtools network panel as a debugging aid.
  * Single byte ranges are answered with 206, because media elements ask for ranges.
+ *
+ * Security headers: the live server sends none today (no CSP, frame-ancestors, Permissions-Policy
+ * or Set-Cookie on `/` or static files; checked against play.plonk.land). The app adds
+ * `X-Content-Type-Options: nosniff`, which is safe because every type here is exact. If the
+ * server starts sending a CSP or other policy headers, they must be added here too (or carried
+ * in /app/manifest, see docs/BUNDLE.md), or the app's shell would run without them, and the app
+ * is the one place the page holds the PlonkNative bridge.
  */
 internal object BundleResponse {
     /**
@@ -89,6 +96,7 @@ internal object BundleResponse {
         mapOf(
             "Cache-Control" to "no-cache",
             "Accept-Ranges" to "bytes",
+            "X-Content-Type-Options" to "nosniff",
             "X-Plonk-Bundle" to (index.build ?: "apk"),
         )
 

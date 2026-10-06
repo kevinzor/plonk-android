@@ -38,6 +38,8 @@ There is no plan that guesses. Without a fresh answer from the server, the app n
 
 **Responses** use the server's headers for static files: the right `Content-Type` (`text/javascript`, `model/gltf-binary`, `image/webp`, `font/woff2`, `application/wasm` and so on), the exact `Content-Length`, and `Cache-Control: no-cache`. A single `Range: bytes=` request gets a `206`. Anything the app can't answer exactly (multiple ranges, a file missing from the APK) goes to the network.
 
+**Security headers.** Today the server sends no security headers on `/` or on static files: no CSP, no `frame-ancestors`, no `Permissions-Policy`, no `Set-Cookie`. The app adds `X-Content-Type-Options: nosniff` to every file it serves. **If the server ever adds a CSP or other policy header, the app must send it too**, or the shell served from the APK would run without it, and the app is the one place the page holds the `PlonkNative` bridge. The plan for that is an optional `headers` object in `/app/manifest` (for example `{ "/index.html": { "Content-Security-Policy": "..." } }`) that `BundleResponse` replays. Until the server sends such headers, there is nothing to replay.
+
 **Debugging:** debug builds log the plan and a hit/miss summary per page load (`adb logcat -s Plonk`). Any build answers `{ t: 'bundle' }` on the bridge:
 
 ```js
