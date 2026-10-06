@@ -1,0 +1,74 @@
+# Plonk for Android
+
+Plonk is a live 3D MMORPG on Solana ([play.plonk.land](https://play.plonk.land)). Players fight, gather, fish and trade. Every $PLONK purchase is paid from the player's own wallet and checked on-chain. This repo is the **native Android app** for the Solana dApp Store and Seeker phones.
+
+The game server and web client live in a separate (private) repo. This app gives the live game a phone-first home with native wallet access through **Mobile Wallet Adapter**.
+
+## What the app does
+
+| | |
+|---|---|
+| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. |
+| **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
+| **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
+| **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
+| **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
+| **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. It handles haptics (tick / tap / hit / heavy / success / error, rate-limited), keep-screen-on, exit, and device/app info. |
+| **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
+
+The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
+
+## Project layout
+
+```
+app/src/main/java/land/plonk/app/
+  MainActivity.kt        full-screen game activity: insets, back, renderer recovery, file chooser
+  PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
+  PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
+  NativeBridge.kt        window.PlonkNative message bridge + haptics
+app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
+scripts/build.sh         memory-capped build (see below)
+```
+
+## Build
+
+Requirements: JDK 21 and the Android SDK (platform 37, build-tools 37.0.0).
+
+```bash
+scripts/build.sh debug     # app/build/outputs/apk/debug/app-debug.apk
+scripts/build.sh release   # signed if a signing env file exists
+```
+
+Our build box also runs the live game server, so `scripts/build.sh` runs Gradle inside a `systemd-run` scope:
+- hard 2.6 GB memory cap
+- low CPU weight
+- temp files on disk
+
+If the build runs out of room, the build is killed, never the game.
+
+**Release signing.** The keystore and passwords are never in this repo. `scripts/build.sh release` reads `/root/plonk-android-keys/signing.env`; override the path with `PLONK_SIGNING_ENV`. The file sets:
+
+```
+SOLANA_MOBILE_KEYSTORE_PATH=...
+SOLANA_MOBILE_KEYSTORE_ALIAS=...
+SOLANA_MOBILE_KEYSTORE_PASSWORD=...
+SOLANA_MOBILE_KEY_PASSWORD=...
+```
+
+Following Solana dApp Store rules, the release key is used only for the dApp Store, never for Google Play.
+
+App id, start URL and version are Gradle properties in `gradle.properties`:
+- `SOLANA_MOBILE_APPLICATION_ID`
+- `SOLANA_MOBILE_URL`
+- `SOLANA_MOBILE_VERSION_CODE`
+- `SOLANA_MOBILE_VERSION_NAME`
+
+## Credits
+
+The app is forked from the **Solana Mobile webshell template** (`solana-mobile` CLI, Apache-2.0). Changes from the template:
+- Compose removed
+- pull-to-refresh and page zoom removed
+- broader `configChanges`
+- back handling, renderer-crash recovery, immersive insets, the native bridge, haptics, file chooser, and Plonk branding
+
+The template's license is in [`LICENSE-webshell-template`](LICENSE-webshell-template).
