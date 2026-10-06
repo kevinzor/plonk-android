@@ -3,9 +3,12 @@ package land.plonk.app
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.util.Log
 import android.webkit.ConsoleMessage
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -13,8 +16,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 
 /**
- * Page-chrome hooks: load progress, debug console, popups (window.open / target=_blank go to the
- * system browser, e.g. jup.ag) and <input type=file> (the skin painter's PNG upload).
+ * Page-chrome hooks: load progress, debug console, popups (window.open / target=_blank from a tap
+ * go to the system browser, e.g. jup.ag) and <input type=file> (the skin painter's PNG upload).
  * Popup handling forked from Solana Mobile's webshell template (Apache-2.0).
  */
 class PlonkChromeClient(
@@ -49,49 +52,89 @@ class PlonkChromeClient(
         fileChooserParams: FileChooserParams,
     ): Boolean = onFileChooser(filePathCallback, fileChooserParams)
 
+    /** Popups still waiting for their URL. */
+    private val popups = mutableSetOf<WebView>()
+    private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * window.open / target=_blank. A throwaway WebView only captures the popup's URL, which is
+     * handed to the system browser.
+     *
+     * Only a tap may take the player out of the game: without a user gesture (a timer, or a
+     * script in an ad or widget iframe) the popup is refused. A popup that never navigates
+     * (window.open('') whose follow-up failed) is destroyed after [POPUP_TIMEOUT_MS] rather than
+     * kept alive with the activity, and a renderer crash in it never takes the app down.
+     */
     override fun onCreateWindow(
         view: WebView,
         isDialog: Boolean,
         isUserGesture: Boolean,
         resultMsg: Message,
     ): Boolean {
-        // A throwaway WebView only captures the popup's URL, which is handed to the system browser.
+        if (!isUserGesture) {
+            if (isDebug) Log.w(TAG, "Popup without a tap refused")
+            return false
+        }
         val popup = WebView(view.context)
+        popups += popup
+        val close = Runnable { if (popups.remove(popup)) popup.destroy() }
         popup.webViewClient =
             object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest,
                 ): Boolean {
-                    val scheme = request.url.scheme?.lowercase()
-                    if (scheme == "http" || scheme == "https") {
-                        try {
-                            view.context.startActivity(
-                                Intent(Intent.ACTION_VIEW, request.url).addCategory(Intent.CATEGORY_BROWSABLE),
-                            )
-                        } catch (_: ActivityNotFoundException) {
-                            if (isDebug) Log.w(TAG, "No app for popup URL: ${request.url}")
-                        } catch (e: RuntimeException) {
-                            Log.w(TAG, "Can't open popup URL", e)
-                        }
-                    }
-                    view.post { view.destroy() }
+                    openInBrowser(view, request.url)
+                    main.post(close)
+                    return true
+                }
+
+                // The popup shares the game's renderer. The default (false) would kill the app.
+                override fun onRenderProcessGone(
+                    view: WebView,
+                    detail: RenderProcessGoneDetail,
+                ): Boolean {
+                    close.run()
                     return true
                 }
             }
         popup.webChromeClient =
             object : WebChromeClient() {
-                override fun onCloseWindow(window: WebView) {
-                    window.destroy()
-                }
+                override fun onCloseWindow(window: WebView) = close.run()
             }
+        main.postDelayed(close, POPUP_TIMEOUT_MS)
         val transport = resultMsg.obj as WebView.WebViewTransport
         transport.webView = popup
         resultMsg.sendToTarget()
         return true
     }
 
+    /** Destroy popups that are still open. Call before the game WebView is destroyed. */
+    fun closePopups() {
+        main.removeCallbacksAndMessages(null)
+        popups.toList().forEach { it.destroy() }
+        popups.clear()
+    }
+
+    private fun openInBrowser(
+        view: WebView,
+        url: Uri,
+    ) {
+        val scheme = url.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return
+        try {
+            view.context.startActivity(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
+        } catch (_: ActivityNotFoundException) {
+            if (isDebug) Log.w(TAG, "No app for popup URL: $url")
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Can't open popup URL", e)
+        }
+    }
+
     private companion object {
         const val TAG = "Plonk"
+
+        /** How long a popup may sit without a URL before it is thrown away. */
+        const val POPUP_TIMEOUT_MS = 10_000L
     }
 }

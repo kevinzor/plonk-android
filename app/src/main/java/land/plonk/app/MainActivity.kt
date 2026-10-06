@@ -155,10 +155,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        webView?.let {
-            root.removeView(it)
-            it.destroy()
-        }
+        webView?.let(::destroyWebView)
         webView = null
         bridge.dispose()
         bundle.close()
@@ -205,7 +202,8 @@ class MainActivity : ComponentActivity() {
                     displayZoomControls = false
                     loadWithOverviewMode = false
                     useWideViewPort = false
-                    javaScriptCanOpenWindowsAutomatically = true
+                    // WebView's own popup blocker stays on: only a tap opens a window.
+                    javaScriptCanOpenWindowsAutomatically = false
                     setSupportMultipleWindows(true)
                     offscreenPreRaster = true
                     allowFileAccess = false
@@ -256,10 +254,15 @@ class MainActivity : ComponentActivity() {
         return wv
     }
 
+    private fun destroyWebView(wv: WebView) {
+        (wv.webChromeClient as? PlonkChromeClient)?.closePopups()
+        root.removeView(wv)
+        wv.destroy()
+    }
+
     private fun rebuildAfterRendererLoss(dead: WebView) {
         if (dead !== webView) return
-        root.removeView(dead)
-        dead.destroy()
+        destroyWebView(dead)
         webView = null
         loads.loading()
         newWebView().loadUrl(startUrl)
