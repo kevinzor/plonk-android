@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="plonk_bg">#FF06070C</color>
+    <color name="plonk_primary">#FF23251E</color>
+    <color name="launcher_icon_background">#FF22241E</color>
+    <color name="splash_background">#FF06070C</color>
+</resources>
