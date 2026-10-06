@@ -28,6 +28,13 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import land.plonk.app.bridge.AppInfoHandler
+import land.plonk.app.bridge.BridgeHandler
+import land.plonk.app.bridge.BridgeHost
+import land.plonk.app.bridge.ExitHandler
+import land.plonk.app.bridge.HapticsHandler
+import land.plonk.app.bridge.KeepAwakeHandler
+import land.plonk.app.bridge.NativeBridge
 
 /**
  * Plonk for Android: a full-screen game WebView on https://play.plonk.land.
@@ -89,21 +96,7 @@ class MainActivity : ComponentActivity() {
         errorView = buildErrorView().also { root.addView(it) }
         hideSystemBars()
 
-        bridge =
-            NativeBridge(
-                context = this,
-                allowedOrigin = "https://$scopeHost",
-                onExit = { runOnUiThread { finish() } },
-                onKeepAwake = { on ->
-                    runOnUiThread {
-                        if (on) {
-                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        } else {
-                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        }
-                    }
-                },
-            )
+        bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
         newWebView().loadUrl(startUrl)
         onBackPressedDispatcher.addCallback(this) { handleBack() }
@@ -120,8 +113,21 @@ class MainActivity : ComponentActivity() {
             it.destroy()
         }
         webView = null
+        bridge.dispose()
         super.onDestroy()
     }
+
+    /**
+     * Every window.PlonkNative feature, one line each. Built in onCreate because handlers may
+     * register Activity Result launchers. Order doesn't matter; two handlers can't share a type.
+     */
+    private fun bridgeHandlers(host: BridgeHost): List<BridgeHandler> =
+        listOf(
+            HapticsHandler(this),
+            KeepAwakeHandler(host),
+            ExitHandler(host),
+            AppInfoHandler(),
+        )
 
     private fun hideSystemBars() {
         WindowInsetsControllerCompat(window, window.decorView).apply {

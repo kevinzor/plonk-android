@@ -13,7 +13,7 @@ The game server and web client live in a separate (private) repo. This app gives
 | **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
 | **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
-| **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. It handles haptics (tick / tap / hit / heavy / success / error, rate-limited), keep-screen-on, exit, and device/app info. |
+| **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
 | **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
@@ -25,10 +25,38 @@ app/src/main/java/land/plonk/app/
   MainActivity.kt        full-screen game activity: insets, back, renderer recovery, file chooser
   PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
   PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
-  NativeBridge.kt        window.PlonkNative message bridge + haptics
+  bridge/
+    NativeBridge.kt      window.PlonkNative: origin lock, routing by message type, built-in caps
+    BridgeHandler.kt     the interface one bridge feature implements
+    Reply.kt             answers to the page (any thread, dropped once the page or WebView is gone)
+    BridgeHost.kt        activity access for handlers: intents, permission prompts, result launchers
+    HapticsHandler.kt    haptic
+    CoreHandlers.kt      exit, awake, info
 app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
 scripts/build.sh         memory-capped build (see below)
 ```
+
+## Native bridge
+
+The page talks to the app with JSON strings. Every message has a type `t`. Replies carry the same `t`, plus the request's `id` if it sent one.
+
+```js
+PlonkNative.onmessage = (e) => { const m = JSON.parse(e.data); /* m.t, m.id, ... */ };
+PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
+// -> { t: 'caps', v: 1, types: ['awake', 'caps', 'exit', 'haptic', 'info'] }
+```
+
+| `t` | Request | Reply |
+|---|---|---|
+| `caps` | | `{ v, types }`: every type this build supports |
+| `haptic` | `k`: tick, tap, hit, heavy, success or error. Rate-limited to about 16 per second. | none |
+| `awake` | `on`: keep the screen on (default `true`) | none |
+| `exit` | close the app | none |
+| `info` | | `{ version, code, sdk, model, seeker }` |
+
+A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
+
+**Adding a feature.** Write a `BridgeHandler` that names its `types`, then add one line to `bridgeHandlers()` in `MainActivity`. A handler that needs a permission prompt or another app uses `BridgeHost`. A handler that needs a result launcher registers it in its constructor. The app refuses to start if two handlers claim the same type.
 
 ## Build
 
