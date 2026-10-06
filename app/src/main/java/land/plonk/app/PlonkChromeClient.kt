@@ -71,6 +71,8 @@ class PlonkChromeClient(
                             )
                         } catch (_: ActivityNotFoundException) {
                             if (isDebug) Log.w(TAG, "No app for popup URL: ${request.url}")
+                        } catch (e: RuntimeException) {
+                            Log.w(TAG, "Can't open popup URL", e)
                         }
                     }
                     view.post { view.destroy() }

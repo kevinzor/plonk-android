@@ -67,13 +67,19 @@ class BridgeHost(
         if (permissionQueue.size == 1) launchNextPermissionRequest()
     }
 
-    /** Start another app. Returns false (instead of throwing) when nothing can handle [intent]. */
+    /**
+     * Start another app. Returns false (instead of throwing) when nothing can handle [intent], or
+     * the only handler is protected by a permission this app doesn't hold.
+     */
     fun startActivity(intent: Intent): Boolean =
         try {
             activity.startActivity(intent)
             true
         } catch (_: ActivityNotFoundException) {
             Log.w(TAG, "No app for ${intent.action} ${intent.data?.scheme.orEmpty()}")
+            false
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Can't start ${intent.action} ${intent.data?.scheme.orEmpty()}", e)
             false
         }
 

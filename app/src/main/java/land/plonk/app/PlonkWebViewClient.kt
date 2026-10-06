@@ -154,6 +154,11 @@ open class PlonkWebViewClient(
         }
     }
 
+    /**
+     * Start another app. This runs on the UI thread from a tap in the game, so nothing it throws
+     * may escape: besides "no app", the only handler can be protected by a permission we don't
+     * hold (SecurityException), and that must not end the player's session.
+     */
     private fun launchExternal(intent: Intent): Boolean {
         if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
@@ -161,6 +166,9 @@ open class PlonkWebViewClient(
             true
         } catch (_: ActivityNotFoundException) {
             Log.w(TAG, "No app for scheme: ${intent.data?.scheme}")
+            false
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Can't open ${intent.data?.scheme} link", e)
             false
         }
     }
