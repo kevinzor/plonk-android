@@ -15,6 +15,7 @@ The game server and web client live in a separate (private) repo. This app gives
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
 | **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for referral invites and brag text, and tells the page which app the player picked or that they cancelled. |
+| **Deep links** | Verified App Links for `https://play.plonk.land`, referral links `https://plonk.land/?ref=...`, and `plonk://`. They open inside the game with `?ref=` / `?kol=` kept. If the game is already running, the link goes to the page as an event instead of reloading it, so a fight or trade isn't lost. See [Links into the game](#links-into-the-game). |
 | **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
@@ -26,6 +27,7 @@ app/src/main/java/land/plonk/app/
   MainActivity.kt        full-screen game activity: insets, back, renderer recovery, file chooser
   PlonkWebViewClient.kt  navigation policy (MWA intents, intent: sanitizing, in-scope host)
   PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
+  GameLinks.kt           deep links: strict parsing onto the game origin, in-place delivery to a running game
   bridge/
     NativeBridge.kt      window.PlonkNative: origin lock, routing by message type, built-in caps
     BridgeHandler.kt     the interface one bridge feature implements
@@ -60,6 +62,44 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
 
 **Adding a feature.** Write a `BridgeHandler` that names its `types`, then add one line to `bridgeHandlers()` in `MainActivity`. A handler that needs a permission prompt or another app uses `BridgeHost`. A handler that needs a result launcher registers it in its constructor. The app refuses to start if two handlers claim the same type.
+
+## Links into the game
+
+| Link | Opens |
+|---|---|
+| `https://play.plonk.land/...` | that page; path and query kept (App Link) |
+| `https://plonk.land/?ref=CODE&kol=CODE` | the game, with the referral |
+| `plonk://play`, `plonk://bag`, `plonk://market`, `plonk://map` | the game, or that window; `?ref=` / `?kol=` allowed |
+
+Every link is rebuilt as a URL on the game origin, and the start URL's `src=app` is always kept. Hosts must match exactly, over https, with no user info and no port other than 443. `open` must be `bag`, `market` or `map`. `ref` and `kol` must be short codes (`[A-Za-z0-9_.@-]`, at most 64 characters). Anything invalid is dropped. Links from Recents are not replayed.
+
+**Cold start:** the link is the first page loaded, so the page reads `?open=`, `?ref=` and `?kol=` from `location.search`.
+
+**Game already running:** if the link only adds `open` / `ref` / `kol` to the page already showing, the app does not reload. It dispatches a cancelable `plonknative` event on `window`:
+
+```js
+window.addEventListener('plonknative', (e) => {
+  const m = e.detail; // { t: 'open', target?: 'bag' | 'market' | 'map', ref?, kol?, url }
+  if (m.t === 'open' && handleLink(m)) e.preventDefault(); // handled: don't reload
+});
+```
+
+If no listener calls `preventDefault()` (an older page, or a page still loading), the app loads `url` instead, so the link is never lost. A plain link to the page already showing just brings the app to the front. Any other link (a different path, other params) loads normally.
+
+**App Link verification.** `autoVerify` only succeeds once both hosts serve `/.well-known/assetlinks.json` with the release signing cert:
+
+```json
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "land.plonk.app",
+    "sha256_cert_fingerprints": ["89:4B:A1:18:65:81:5E:7A:24:27:E7:04:3D:8C:00:07:DD:46:80:D7:74:E7:0F:9D:AC:A7:09:56:17:EE:20:82"]
+  }
+}]
+```
+
+Check on a phone with `adb shell pm get-app-links land.plonk.app`. A debug build has a different cert, so allow it by hand: `adb shell pm set-app-links-user-selection --user cur --package land.plonk.app true play.plonk.land plonk.land`.
 
 ## Build
 
