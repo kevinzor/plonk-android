@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Build the Plonk APK. Usage: scripts/build.sh [debug|release]
+# Build the Plonk APK. Usage: [FETCH_BUNDLE=1] [BUNDLE_FROM=<game>/public] scripts/build.sh [debug|release]
+#
+# FETCH_BUNDLE=1 first refreshes the game files packed into the APK (tools/fetch-bundle.mjs, see
+# docs/BUNDLE.md) from the live server, or from a local public/ dir when BUNDLE_FROM is set.
+# Without it the existing bundle is kept; an empty bundle is fine (the app streams everything).
 #
 # The build box also runs the live game server, so Gradle runs inside a systemd scope with a
 # hard memory cap and low CPU priority: if the build runs out of room, the BUILD is killed,
@@ -25,6 +29,14 @@ if [[ "$KIND" == release ]]; then
   fi
 fi
 TASK=assembleRelease; [[ "$KIND" == debug ]] && TASK=assembleDebug
+
+if [[ "${FETCH_BUNDLE:-0}" == 1 ]]; then
+  BUNDLE_ARGS=()
+  [[ -n "${BUNDLE_FROM:-}" ]] && BUNDLE_ARGS+=(--from-dir "$BUNDLE_FROM")
+  nice -n 19 node tools/fetch-bundle.mjs "${BUNDLE_ARGS[@]}"
+elif command -v node >/dev/null; then
+  node tools/fetch-bundle.mjs --status
+fi
 
 # One Gradle build at a time on this box (each may use ~2.6 GB): later callers wait for the lock.
 LOCK="${PLONK_BUILD_LOCK:-/root/plonk-android-scratch/gradle.lock}"

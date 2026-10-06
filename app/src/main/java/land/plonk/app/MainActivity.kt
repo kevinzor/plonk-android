@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import land.plonk.app.bridge.AppInfoHandler
 import land.plonk.app.bridge.BridgeHandler
 import land.plonk.app.bridge.BridgeHost
+import land.plonk.app.bridge.BundleHandler
 import land.plonk.app.bridge.ExitHandler
 import land.plonk.app.bridge.HapticsHandler
 import land.plonk.app.bridge.KeepAwakeHandler
@@ -34,6 +35,7 @@ import land.plonk.app.bridge.NativeBridge
 import land.plonk.app.bridge.NotifyHandler
 import land.plonk.app.bridge.ShareHandler
 import land.plonk.app.bridge.WalletHandler
+import land.plonk.app.bundle.GameBundle
 import land.plonk.app.ui.StatusScreen
 
 /**
@@ -48,6 +50,9 @@ import land.plonk.app.ui.StatusScreen
  *   the WebView and reloads instead of crashing;
  * - the player never sees a browser error page: loading and failures get the branded
  *   [StatusScreen], which retries by itself (see [LoadController]).
+ *
+ * Unchanged game files are served from the APK ([GameBundle]), so a cold start doesn't wait on
+ * megabytes of code and art.
  */
 class MainActivity : ComponentActivity() {
     private lateinit var root: FrameLayout
@@ -55,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var loads: LoadController
     private var webView: WebView? = null
     private lateinit var bridge: NativeBridge
+    private lateinit var bundle: GameBundle
     private lateinit var startUrl: String
     private lateinit var scopeHost: String
     private lateinit var links: GameLinks
@@ -111,6 +117,11 @@ class MainActivity : ComponentActivity() {
         lifecycle.addObserver(loads)
         hideSystemBars()
 
+        // Before the first load: the manifest check runs while the WebView spins up.
+        bundle = GameBundle(this, origin = "https://$scopeHost")
+        bundle.prefetch()
+        bundle.interceptServiceWorkers()
+
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
         // Cold start from a link (App Link, plonk://, shortcut): the link is simply the first page.
@@ -146,6 +157,7 @@ class MainActivity : ComponentActivity() {
         }
         webView = null
         bridge.dispose()
+        bundle.close()
         super.onDestroy()
     }
 
@@ -162,6 +174,7 @@ class MainActivity : ComponentActivity() {
             NotifyHandler(host),
             ShareHandler(host),
             WalletHandler(host),
+            BundleHandler(bundle),
         )
 
     private fun hideSystemBars() {
@@ -209,9 +222,13 @@ class MainActivity : ComponentActivity() {
                     PlonkWebViewClient(
                         context = this@MainActivity,
                         scopeHost = scopeHost,
-                        onMainFrameFinished = { _, _ -> loads.finished() },
+                        onMainFrameFinished = { _, _ ->
+                            loads.finished()
+                            bundle.logPageSummary()
+                        },
                         onMainFrameError = { httpStatus -> loads.failed(httpStatus) },
                         onRendererGone = { dead -> rebuildAfterRendererLoss(dead) },
+                        interceptRequest = bundle::intercept,
                     )
                 setDownloadListener { url, _, _, _, _ ->
                     val scheme = url.toUri().scheme?.lowercase()
