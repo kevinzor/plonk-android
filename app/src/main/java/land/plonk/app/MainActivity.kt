@@ -281,10 +281,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Retry after a failed load: reload the page that failed, or the game if nothing loaded. */
+    /**
+     * Retry after a failed load: reload the page that failed, or start the game again if nothing
+     * loaded or the failed page isn't a game page (retrying it could never succeed).
+     */
     private fun reloadGame() {
         val wv = webView ?: newWebView()
-        if (wv.url.isNullOrEmpty()) wv.loadUrl(startUrl) else wv.reload()
+        val failed = wv.url?.toUri()
+        if (failed == null || !PlonkWebViewClient.isInScope(failed, scopeHost)) wv.loadUrl(startUrl) else wv.reload()
     }
 
     /**

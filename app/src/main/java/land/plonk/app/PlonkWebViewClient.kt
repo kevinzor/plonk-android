@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
@@ -18,7 +19,9 @@ import androidx.core.net.toUri
  * Navigation policy for the game WebView. Forked from Solana Mobile's webshell template
  * (Apache-2.0), plus renderer-crash recovery and main-frame callbacks for MainActivity.
  *
- * - play.plonk.land stays inside the app; every other http(s) page opens in the system browser.
+ * - https://play.plonk.land (default port) stays inside the app; every other http(s) page opens
+ *   in the system browser. An http:// link to the game (a redirect built behind a proxy) is
+ *   upgraded to https in place, because cleartext would fail and retry forever.
  * - solana-wallet: links launch the wallet app (Mobile Wallet Adapter), then a synthetic blur
  *   tells the MWA JS client that the wallet opened (a WebView never fires blur on its own).
  * - intent: links are sanitized to implicit, browsable targets only.
@@ -60,14 +63,18 @@ open class PlonkWebViewClient(
 
             "blob", "javascript", "about", "data" -> false
 
-            "http", "https" -> {
-                if (url.host.equals(scopeHost, ignoreCase = true)) {
-                    false
-                } else {
-                    launchExternal(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
-                    true
+            "http", "https" ->
+                when {
+                    isInScope(url, scopeHost) -> false
+                    scheme == "http" && url.host.equals(scopeHost, ignoreCase = true) -> {
+                        view.loadUrl(upgraded(url).toString())
+                        true
+                    }
+                    else -> {
+                        launchExternal(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
+                        true
+                    }
                 }
-            }
 
             else -> {
                 launchExternal(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
@@ -173,7 +180,24 @@ open class PlonkWebViewClient(
         }
     }
 
-    private companion object {
-        const val TAG = "Plonk"
+    companion object {
+        private const val TAG = "Plonk"
+
+        /** True for a page of the game: https, exactly [host], default port. */
+        fun isInScope(
+            url: Uri,
+            host: String,
+        ): Boolean =
+            url.scheme.equals("https", ignoreCase = true) &&
+                url.host.equals(host, ignoreCase = true) &&
+                (url.port == -1 || url.port == 443)
+
+        /** The same game page over https on the default port, with no user info. */
+        private fun upgraded(url: Uri): Uri =
+            url
+                .buildUpon()
+                .scheme("https")
+                .encodedAuthority(url.host)
+                .build()
     }
 }
