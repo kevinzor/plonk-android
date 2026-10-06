@@ -1,6 +1,7 @@
 package land.plonk.app
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -36,6 +37,7 @@ import land.plonk.app.bridge.HapticsHandler
 import land.plonk.app.bridge.KeepAwakeHandler
 import land.plonk.app.bridge.NativeBridge
 import land.plonk.app.bridge.NotifyHandler
+import land.plonk.app.bridge.ShareHandler
 
 /**
  * Plonk for Android: a full-screen game WebView on https://play.plonk.land.
@@ -55,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var bridge: NativeBridge
     private lateinit var startUrl: String
     private lateinit var scopeHost: String
+    private lateinit var links: GameLinks
 
     private var firstPaintDone = false
     private val createdAt = SystemClock.uptimeMillis()
@@ -75,6 +78,7 @@ class MainActivity : ComponentActivity() {
 
         startUrl = BuildConfig.SOLANA_MOBILE_URL
         scopeHost = startUrl.toUri().host.orEmpty()
+        links = GameLinks(startUrl)
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -99,8 +103,22 @@ class MainActivity : ComponentActivity() {
 
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
 
-        newWebView().loadUrl(startUrl)
+        // Cold start from a link (App Link, plonk://, shortcut): the link is simply the first page.
+        newWebView().loadUrl(links.fromIntent(intent)?.url?.toString() ?: startUrl)
         onBackPressedDispatcher.addCallback(this) { handleBack() }
+    }
+
+    /** A link while the game is running (the activity is singleTask). See [GameLinks.deliver]. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val link = links.fromIntent(intent) ?: return
+        val wv = webView
+        if (wv == null || errorView.visibility == View.VISIBLE) {
+            (wv ?: newWebView()).loadUrl(link.url.toString())
+        } else {
+            links.deliver(wv, link)
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -129,6 +147,7 @@ class MainActivity : ComponentActivity() {
             ExitHandler(host),
             AppInfoHandler(),
             NotifyHandler(host),
+            ShareHandler(host),
         )
 
     private fun hideSystemBars() {

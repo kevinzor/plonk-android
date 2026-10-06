@@ -3,4 +3,11 @@
     <string name="cant_reach">Can\'t reach Plonk.\nCheck your connection.</string>
     <string name="retry">Retry</string>
     <string name="press_back_again">Press back again to leave Plonk</string>
+    <!-- Launcher shortcuts: short labels fit under an icon (~10 chars), long ones in the menu. -->
+    <string name="shortcut_bag">Bag</string>
+    <string name="shortcut_bag_long">Open your bag</string>
+    <string name="shortcut_market">Market</string>
+    <string name="shortcut_market_long">Open the market</string>
+    <string name="shortcut_map">World map</string>
+    <string name="shortcut_map_long">Open the world map</string>
 </resources>

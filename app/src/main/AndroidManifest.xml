@@ -44,7 +44,49 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- App Links: game links open straight in the app once play.plonk.land serves
+                 /.well-known/assetlinks.json with this app's signing cert (see README). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="play.plonk.land" />
+            </intent-filter>
+
+            <!-- Referral links from the website: https://plonk.land/?ref=... (root only; the rest
+                 of plonk.land stays in the browser). Both spellings of the root path. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="plonk.land" />
+                <data android:path="/" />
+                <data android:path="" />
+            </intent-filter>
+
+            <!-- plonk://play, plonk://bag, plonk://market, plonk://map (also used by shortcuts). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="plonk" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Launcher shortcut trampoline: its own task, so the shortcut's CLEAR_TASK can't wipe
+             a running game. Not exported; the launcher starts shortcuts as this app. -->
+        <activity
+            android:name=".ShortcutActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
     </application>
 
 </manifest>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Long-press shortcuts on the launcher icon. Each opens plonk://<window>, which MainActivity turns
+    into https://play.plonk.land/?src=app&open=<window> (or an in-place event if the game is
+    already running; see GameLinks).
+
+    They go through ShortcutActivity because Android launches static shortcuts with
+    FLAG_ACTIVITY_CLEAR_TASK, which would otherwise destroy a running game.
+    targetPackage must match applicationId (SOLANA_MOBILE_APPLICATION_ID in gradle.properties).
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_bag"
+        android:shortcutId="bag"
+        android:shortcutLongLabel="@string/shortcut_bag_long"
+        android:shortcutShortLabel="@string/shortcut_bag">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="plonk://bag"
+            android:targetClass="land.plonk.app.ShortcutActivity"
+            android:targetPackage="land.plonk.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_market"
+        android:shortcutId="market"
+        android:shortcutLongLabel="@string/shortcut_market_long"
+        android:shortcutShortLabel="@string/shortcut_market">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="plonk://market"
+            android:targetClass="land.plonk.app.ShortcutActivity"
+            android:targetPackage="land.plonk.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_map"
+        android:shortcutId="map"
+        android:shortcutLongLabel="@string/shortcut_map_long"
+        android:shortcutShortLabel="@string/shortcut_map">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="plonk://map"
+            android:targetClass="land.plonk.app.ShortcutActivity"
+            android:targetPackage="land.plonk.app" />
+    </shortcut>
+</shortcuts>
