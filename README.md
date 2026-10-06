@@ -8,10 +8,11 @@ The game server and web client live in a separate (private) repo. This app gives
 
 | | |
 |---|---|
-| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. |
+| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. If no wallet app is installed, the page can list wallets (`wallets`) and send the player to the dApp Store listing (`getWallet`) instead of a dead button. |
 | **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
 | **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
 | **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
+| **Loading and offline screens** | While the game loads, the splash hands over to the PLONK logo with a slim gold load bar, never a browser page. If the game can't load, a branded screen says why (offline, no answer, or the server restarting) and gets the player back in by itself: it reloads as soon as the phone is back online (`ConnectivityManager` network callback), and otherwise retries on a short countdown. Nothing retries while the app is in the background. |
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
 | **Game alerts** | Boss spawns, payouts, party and trade invites and whispers become Android notifications, but only while the game is off screen (on screen, the game shows them itself). Each kind is its own channel under "Game alerts", so players can mute one kind in system settings. The Android 13 permission prompt appears only when the game asks for it. Tapping an alert resumes the running game, and opening the game clears the shade. |
@@ -31,6 +32,12 @@ app/src/main/java/land/plonk/app/
   PlonkChromeClient.kt   progress, debug console, popups to the system browser, file chooser
   GameLinks.kt           deep links: strict parsing onto the game origin, in-place delivery to a running game
   ShortcutActivity.kt    invisible trampoline for launcher shortcuts (keeps a running game alive)
+  LoadController.kt      loader and error screen state, auto-retry (backoff, network back, app resumed)
+  NetworkWatcher.kt      default-network callback while the error screen is up
+  ui/
+    StatusScreen.kt      the branded loading / can't-load screen
+    PlonkLogoView.kt     the splash logo, vignetted into the page colour
+    LoadingBar.kt        slim eased load bar with a moving highlight
   bridge/
     NativeBridge.kt      window.PlonkNative: origin lock, routing by message type, built-in caps
     BridgeHandler.kt     the interface one bridge feature implements
@@ -41,6 +48,7 @@ app/src/main/java/land/plonk/app/
     NotifyHandler.kt     notify, notifyPermission, notifyState, notifySettings
     GameAlerts.kt        alert kinds and their notification channels; posting, replacing by tag, clearing
     ShareHandler.kt      share (Android share sheet)
+    WalletHandler.kt     wallets, getWallet: installed MWA wallets and store links
 app/src/main/res/        icons, splash, theme, launcher shortcuts, network security config (cleartext only for MWA's loopback)
 scripts/build.sh         memory-capped build (see below)
 ```
@@ -52,7 +60,7 @@ The page talks to the app with JSON strings. Every message has a type `t`. Repli
 ```js
 PlonkNative.onmessage = (e) => { const m = JSON.parse(e.data); /* m.t, m.id, ... */ };
 PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
-// -> { t: 'caps', v: 1, types: ['awake', 'caps', 'exit', 'haptic', 'info', 'notify', 'notifyPermission', 'notifySettings', 'notifyState', 'share'] }
+// -> { t: 'caps', v: 1, types: ['awake', 'caps', 'exit', 'getWallet', 'haptic', 'info', 'notify', 'notifyPermission', 'notifySettings', 'notifyState', 'share', 'wallets'] }
 ```
 
 | `t` | Request | Reply |
@@ -67,6 +75,8 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 | `notifyState` | | `{ enabled, permission, kinds: { boss, payout, invite, whisper, other } }`. permission is granted, default or denied, as on the web. |
 | `notifySettings` | `kind?`: open the system settings for these alerts, or for one kind | `{ opened }` |
 | `share` | `text`, `url?`, `title?`. The url is appended to the text unless the text already contains it. | Once: `{ ok: true, app? }` with the chosen app's package, or on Android 15+ `{ ok: true, via: 'copy' \| 'edit' }`. `error`: `cancelled` (sheet closed, or replaced by a newer share), `bad_request`, `bad_url`, `unavailable`. |
+| `wallets` | `icons`: also send each app's icon as a PNG data URL | `{ apps: [{ label, pkg, id?, icon? }], store }`: installed apps that answer Mobile Wallet Adapter links, and the store `getWallet` would use (`dappstore`, `play` or null) |
+| `getWallet` | `which`: phantom or solflare | `{ store }`: opens the wallet's listing in the Solana dApp Store, else Google Play, else the Play page in the browser. `error: 'unknown_wallet'` or `'unavailable'` |
 
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The branded loading / can't-load screen over the game (StatusScreen). -->
+    <string name="status_loading">Loading Plonk</string>
+
+    <string name="status_offline_title">You\'re offline</string>
+    <string name="status_offline_body">Plonk needs the internet to reach the realm. We\'ll jump back in as soon as you\'re connected.</string>
+
+    <string name="status_unreachable_title">Can\'t reach Plonk</string>
+    <string name="status_unreachable_body">The realm isn\'t answering right now. We\'ll keep trying, or you can try again yourself.</string>
+
+    <string name="status_updating_title">Plonk is updating</string>
+    <string name="status_updating_body">The realm is restarting with something new. We\'ll bring you back as soon as it\'s ready.</string>
+
+    <string name="status_waiting_for_network">Waiting for a connection…</string>
+    <string name="status_retry_in">Trying again in %1$d s</string>
+</resources>
