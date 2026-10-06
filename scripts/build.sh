@@ -26,6 +26,12 @@ if [[ "$KIND" == release ]]; then
 fi
 TASK=assembleRelease; [[ "$KIND" == debug ]] && TASK=assembleDebug
 
+# One Gradle build at a time on this box (each may use ~2.6 GB): later callers wait for the lock.
+LOCK="${PLONK_BUILD_LOCK:-/root/plonk-android-scratch/gradle.lock}"
+mkdir -p "$(dirname "$LOCK")"
+exec 9>"$LOCK"
+flock 9
+
 CAP=(systemd-run --scope --quiet -p MemoryMax=2600M -p MemorySwapMax=0 -p CPUWeight=20 --)
 command -v systemd-run >/dev/null || CAP=()
 "${CAP[@]}" nice -n 19 ./gradlew --no-daemon --console=plain -Dorg.gradle.jvmargs="-Xmx1280m -XX:MaxMetaspaceSize=512m -Djava.io.tmpdir=$SCRATCH -Dfile.encoding=UTF-8" "${PROPS[@]}" "$TASK"
