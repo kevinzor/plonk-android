@@ -20,18 +20,40 @@ class ExitHandler(
 /**
  * `{ t: 'awake', on }`: keep the screen on (on: true, the default) or let it sleep. The app starts
  * with the screen kept on.
+ *
+ * The page's choice only holds while the game is showing. While the app's error screen is up
+ * ([paused]), the phone may sleep as usual: a phone left on "You're offline" must not keep its
+ * display on until the battery runs out.
  */
 class KeepAwakeHandler(
     private val host: BridgeHost,
 ) : BridgeHandler {
     override val types = setOf("awake")
 
+    private var pageWantsAwake = true
+
+    /** True while the game isn't what the player sees (MainActivity sets it from the loader). */
+    var paused = false
+        set(value) {
+            field = value
+            apply()
+        }
+
+    init {
+        apply()
+    }
+
     override fun handle(
         msg: JSONObject,
         reply: Reply,
     ) {
+        pageWantsAwake = msg.optBoolean("on", true)
+        apply()
+    }
+
+    private fun apply() {
         val window = host.activity.window
-        if (msg.optBoolean("on", true)) {
+        if (pageWantsAwake && !paused) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

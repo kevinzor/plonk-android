@@ -47,6 +47,9 @@ class LoadController(
     private val network = NetworkWatcher(context, onChange = ::onNetworkChanged, onBack = ::retryNow)
     private val tick = Runnable { onTick() }
 
+    /** Called with true when the error screen comes up, and false when the game loads again. */
+    var onShowingProblem: (Boolean) -> Unit = {}
+
     /** Called once, the first time the game has loaded (or failed to): the splash can go. */
     var onSettled: () -> Unit = {}
     private var settled = false
@@ -57,6 +60,7 @@ class LoadController(
 
     /** The app is about to load the game itself. Shows the loader. */
     fun loading() {
+        if (state == State.FAILED) onShowingProblem(false)
         state = State.LOADING
         failedThisLoad = false
         problem = null
@@ -133,6 +137,7 @@ class LoadController(
     }
 
     private fun fail(why: Problem) {
+        if (state != State.FAILED) onShowingProblem(true)
         state = State.FAILED
         settle()
         if (!started) {

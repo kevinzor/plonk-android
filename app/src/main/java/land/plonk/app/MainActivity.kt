@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var scopeHost: String
     private lateinit var links: GameLinks
     private lateinit var offlineCopy: OfflineCopyWatch
+    private lateinit var keepAwake: KeepAwakeHandler
 
     private var firstPaintDone = false
     private val createdAt = SystemClock.uptimeMillis()
@@ -108,7 +109,6 @@ class MainActivity : ComponentActivity() {
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes =
             window.attributes.apply {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -137,6 +137,8 @@ class MainActivity : ComponentActivity() {
         lifecycle.addObserver(offlineCopy)
 
         bridge = NativeBridge(allowedOrigin = "https://$scopeHost", handlers = bridgeHandlers(BridgeHost(this)))
+        // The screen stays on for the game, never for the error screen.
+        loads.onShowingProblem = { keepAwake.paused = it }
 
         // Cold start from a link (App Link, plonk://, shortcut): the link is simply the first page.
         // A recreated activity (process restored) must not replay the link that first opened it.
@@ -190,7 +192,7 @@ class MainActivity : ComponentActivity() {
     private fun bridgeHandlers(host: BridgeHost): List<BridgeHandler> =
         listOf(
             HapticsHandler(this),
-            KeepAwakeHandler(host),
+            KeepAwakeHandler(host).also { keepAwake = it },
             ExitHandler(host),
             AppInfoHandler(),
             NotifyHandler(host),
