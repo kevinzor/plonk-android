@@ -8,7 +8,7 @@ The game server and web client live in a separate (private) repo. This app gives
 
 | | |
 |---|---|
-| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. |
+| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur` so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. If no wallet app is installed, the page can list wallets (`wallets`) and send the player to the dApp Store listing (`getWallet`) instead of a dead button. |
 | **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
 | **Game-safe WebView** | There is no pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards and theme changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
 | **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
@@ -32,6 +32,7 @@ app/src/main/java/land/plonk/app/
     BridgeHost.kt        activity access for handlers: intents, permission prompts, result launchers
     HapticsHandler.kt    haptic
     CoreHandlers.kt      exit, awake, info
+    WalletHandler.kt     wallets, getWallet: installed MWA wallets and store links
 app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
 scripts/build.sh         memory-capped build (see below)
 ```
@@ -53,6 +54,8 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 | `awake` | `on`: keep the screen on (default `true`) | none |
 | `exit` | close the app | none |
 | `info` | | `{ version, code, sdk, model, seeker }` |
+| `wallets` | `icons`: also send each app's icon as a PNG data URL | `{ apps: [{ label, pkg, id?, icon? }], store }`: installed apps that answer Mobile Wallet Adapter links, and the store `getWallet` would use (`dappstore`, `play` or null) |
+| `getWallet` | `which`: phantom or solflare | `{ store }`: opens the wallet's listing in the Solana dApp Store, else Google Play, else the Play page in the browser. `error: 'unknown_wallet'` or `'unavailable'` |
 
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
 

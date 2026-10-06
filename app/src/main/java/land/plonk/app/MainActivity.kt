@@ -35,6 +35,7 @@ import land.plonk.app.bridge.ExitHandler
 import land.plonk.app.bridge.HapticsHandler
 import land.plonk.app.bridge.KeepAwakeHandler
 import land.plonk.app.bridge.NativeBridge
+import land.plonk.app.bridge.WalletHandler
 
 /**
  * Plonk for Android: a full-screen game WebView on https://play.plonk.land.
@@ -127,6 +128,7 @@ class MainActivity : ComponentActivity() {
             KeepAwakeHandler(host),
             ExitHandler(host),
             AppInfoHandler(),
+            WalletHandler(host),
         )
 
     private fun hideSystemBars() {
