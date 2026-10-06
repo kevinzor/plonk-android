@@ -14,6 +14,7 @@ The game server and web client live in a separate (private) repo. This app gives
 | **Back button** | Closes the top game window first (`window.plonkBack()`, falling back to a synthetic Escape). At the world root, a second press within 2 s leaves the app. |
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView and reloads instead of crashing. |
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page can ask which ones this build has (`caps`). See [Native bridge](#native-bridge) below. |
+| **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for referral invites and brag text, and tells the page which app the player picked or that they cancelled. |
 | **Links and files** | Other sites open in the system browser. `intent:` links are sanitized to implicit, browsable targets. File pickers (skin upload) use the system picker. |
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
@@ -32,6 +33,7 @@ app/src/main/java/land/plonk/app/
     BridgeHost.kt        activity access for handlers: intents, permission prompts, result launchers
     HapticsHandler.kt    haptic
     CoreHandlers.kt      exit, awake, info
+    ShareHandler.kt      share (Android share sheet)
 app/src/main/res/        icons, splash, theme, network security config (cleartext only for MWA's loopback)
 scripts/build.sh         memory-capped build (see below)
 ```
@@ -43,7 +45,7 @@ The page talks to the app with JSON strings. Every message has a type `t`. Repli
 ```js
 PlonkNative.onmessage = (e) => { const m = JSON.parse(e.data); /* m.t, m.id, ... */ };
 PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
-// -> { t: 'caps', v: 1, types: ['awake', 'caps', 'exit', 'haptic', 'info'] }
+// -> { t: 'caps', v: 1, types: ['awake', 'caps', 'exit', 'haptic', 'info', 'share'] }
 ```
 
 | `t` | Request | Reply |
@@ -53,6 +55,7 @@ PlonkNative.postMessage(JSON.stringify({ t: 'caps' }));
 | `awake` | `on`: keep the screen on (default `true`) | none |
 | `exit` | close the app | none |
 | `info` | | `{ version, code, sdk, model, seeker }` |
+| `share` | `text`, `url?`, `title?`. The url is appended to the text unless the text already contains it. | Once: `{ ok: true, app? }` with the chosen app's package, or on Android 15+ `{ ok: true, via: 'copy' \| 'edit' }`. `error`: `cancelled` (sheet closed, or replaced by a newer share), `bad_request`, `bad_url`, `unavailable`. |
 
 A handler that fails replies `{ t, error: 'failed' }`. Unknown types are ignored, so the page should check `caps` before using a newer feature.
 
