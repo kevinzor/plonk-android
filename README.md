@@ -1,29 +1,97 @@
 # Plonk for Android
 
-Plonk is a live 3D MMORPG on Solana ([play.plonk.land](https://play.plonk.land)). Players fight, gather, fish and trade. Every $PLONK purchase is paid from the player's own wallet and checked on-chain. This repo is the **native Android app** for the Solana dApp Store and Seeker phones.
+**Plonk** is a live 3D MMORPG on Solana ([play.plonk.land](https://play.plonk.land)). Players fight, gather, fish, trade and run a market. Tokens are never held in a game balance: every $PLONK or SKR purchase is paid from the player's own wallet and checked on-chain by the server before anything is granted.
 
-The game server and web client live in a separate (private) repo. This app gives the live game a phone-first home with native wallet access through **Mobile Wallet Adapter**.
+This repo is the **native Android app** (`land.plonk.app`) for Seeker phones and the Solana dApp Store. It is a Kotlin WebView app around the live game, with native wallet access through **Mobile Wallet Adapter** and a set of phone features the website can't have.
+
+> **For judges:** the game server and web client live in a separate, private repo. Access is shared with the judges through Align. This repo is everything that runs natively on the phone.
+
+## At a glance
+
+**Built natively in this app**
+
+- **Mobile Wallet Adapter + Seed Vault.** Wallet links open the phone's wallet app (Seed Vault Wallet on a Seeker, or Phantom / Solflare). Sign-in and on-chain purchases go through it. With no wallet installed, the game offers the dApp Store listing instead of a dead button.
+- **Bundled game files with live sync.** The APK ships the game's code, models, icons and sounds (1,182 files). Each time the game loads, the app compares them with the server's manifest and only downloads what changed, so a game update reaches the app without an app update. With no network at all, the game still opens from the APK.
+- **Game alerts.** Boss spawns, payouts and market sales, invites and whispers become Android notifications while the game is in the background, each kind its own channel.
+- **Share sheet** for invite links, **launcher shortcuts** (Bag, Market, World map), **deep links** (`https://play.plonk.land/...`, `plonk://`) and **haptics** on hits, kills, loot, level-ups and purchases.
+- **Branded loading, offline and crash recovery.** Never a browser error page: a Plonk screen says what went wrong and reconnects by itself when the network returns. If Android kills the WebView renderer (low memory while the wallet is open), the app rebuilds it instead of crashing.
+- **A game-safe shell.** Full screen, edge to edge, no pull-to-refresh, no reload on rotation or keyboard, and Android back closes the top game window first.
+
+**In the game, live now** (private game repo; in the app it all runs through MWA)
+
+- **Seeker Genesis perks.** A wallet holding a Seeker Genesis Token counts as a 1,000,000 $PLONK holder for every holder perk: premium zones, raids and bosses, the gold nameplate, the sparkle trail, custom skins. The server checks the token on-chain (Token-2022 group membership); the app's own `seeker` device hint is never trusted for this. Holders also get the "Making Moves" emote.
+- **Pay with SKR.** Mounts and house tiers 4 to 8 can be paid in SKR at the same live dollar value as $PLONK. The server builds the transfer, the player's wallet signs it, and the server verifies it on-chain before the item is granted.
+- **Gold to SKR.** Gold cashed out at the desk is paid in $PLONK as before, then one tap builds a Jupiter swap to SKR that the player's own wallet signs. The page checks the quote and the transaction's shape before the wallet opens. The house never trades.
+
+Wallet sign-in and market purchases through MWA have been tested on a Seeker.
+
+## Install
+
+Requires Android 9 or newer and a Solana wallet app (Seekers ship with Seed Vault Wallet).
+
+1. Get the signed APK, `Plonk-1.0.0.apk`, from the submission.
+2. Install it with `adb install Plonk-1.0.0.apk`, or open the file on the phone and allow installs from that source.
+3. Open Plonk, tap Connect, and approve in the wallet.
+
+The release signing certificate is
+`89:4B:A1:18:65:81:5E:7A:24:27:E7:04:3D:8C:00:07:DD:46:80:D7:74:E7:0F:9D:AC:A7:09:56:17:EE:20:82` (SHA-256). Check it with `apksigner verify --print-certs Plonk-1.0.0.apk`.
+
+To build it yourself, see [Build](#build).
+
+## Architecture
+
+```
+ Seeker / Android phone
+ +---------------------------------------------------------------+
+ |  Plonk app (this repo)                                        |
+ |                                                               |
+ |  MainActivity: full screen, back, insets, renderer recovery   |
+ |   |                                                           |
+ |   +- WebView  https://play.plonk.land/?src=app                |
+ |   |   |                                                       |
+ |   |   +- PlonkWebViewClient --- solana-wallet: links ---------+--> Seed Vault / Phantom / Solflare
+ |   |   |                                                       |    (Mobile Wallet Adapter)
+ |   |   +- GameBundle --------- serves APK files whose sha256   |
+ |   |   |                       still matches /app/manifest     |
+ |   |   +- window.PlonkNative - bridge handlers: haptic, notify,|
+ |   |                           share, wallets, info, bundle... |
+ |   +- LoadController / StatusScreen: loading, offline, errors  |
+ |   +- GameLinks / ShortcutActivity: deep links and shortcuts   |
+ +----------------------------+----------------------------------+
+                              | https + websocket
+                              v
+ play.plonk.land  (private game repo)
+   web client: three.js world, app-bridge.js (uses PlonkNative when present)
+   game server: Express + Colyseus rooms
+     GET /app/manifest              sha256 of every static file (bundle sync)
+     /.well-known/assetlinks.json   App Link verification for this app's cert
+     on-chain checks                $PLONK and SKR payments, Seeker Genesis Token
+                              |
+                              v
+ Solana mainnet  (RPC; Jupiter for the gold -> SKR swap, signed by the player)
+```
 
 ## What the app does
 
-Everything below is built in this repo. Rows marked **needs the game page** work as soon as the web client sends the message or reads the param. The app ships them now, and pages that don't use them behave exactly as on the website. What is still pending on the web and server side is listed in [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md#pending-work).
+Everything below is built in this repo, and the live game page uses all of it through `public/js/app-bridge.js` in the game repo. Outside the app those hooks do nothing, so the website is unchanged. What is still open on either side is listed in [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md#pending-work).
 
 | | |
 |---|---|
-| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur`, so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. If no wallet app is installed, the page can list wallets (`wallets`) and send the player to the dApp Store listing (`getWallet`) instead of a dead button (**needs the game page**). |
-| **Game files in the APK** | The game's code, models, icons and sounds can ship inside the app (`FETCH_BUNDLE=1`). Each file is served from the APK while its sha256 still matches the live server's manifest, and only changed files are downloaded. The plan is made per document, so old and new code never mix. With no network at all, the app opens the game from the APK, and once the network is back it moves the player onto the live game. Needs the server's `/app/manifest` (pending); until then the app streams everything like the website. See [docs/BUNDLE.md](docs/BUNDLE.md). |
+| **Mobile Wallet Adapter** | `solana-wallet:` links open the phone's wallet app (Seed Vault, Phantom, Solflare). The page then gets a synthetic `blur`, so the MWA JS client knows the wallet opened (a WebView never fires one). Wallet sign-in and on-chain market purchases are tested on a Seeker. If no wallet app is installed, the page lists wallets (`wallets`) and sends the player to the dApp Store listing (`getWallet`) instead of a dead button. |
+| **Game files in the APK** | The game's code, models, icons and sounds ship inside the app (`FETCH_BUNDLE=1` at build time). Each file is served from the APK while its sha256 still matches the live server's `/app/manifest`, and only changed files are downloaded. The plan is made per document, so old and new code never mix. With no network at all, the app opens the game from the APK, and once the network is back it moves the player onto the live game. See [docs/BUNDLE.md](docs/BUNDLE.md). |
 | **Full-screen game** | Immersive mode, edge to edge. Game content is padded away from the camera cutout, and it shrinks above the keyboard so chat stays visible. |
 | **Game-safe WebView** | No pull-to-refresh, so a downward drag can never reload a fight. Rotation, folds, keyboards, theme, bold text and SIM or roaming changes never recreate the activity. Page zoom is off (the game has its own pinch zoom). |
 | **Back button** | Closes the top game window first (`window.plonkBack()`, or a synthetic Escape that counts only if it changed something). At the world root, a second press within 2 s is the system's own back: predictive back-to-home, and the game stays warm in the background. |
 | **Loading and error screens** | The splash hands over to the PLONK logo with a slim gold load bar, never a blank or browser page. If the game can't load, a branded screen says why (offline, no answer, server error or restarting) and gets the player back in by itself: at once when the network returns (`ConnectivityManager` callback), otherwise on a countdown. A 4xx on a link falls back to the start page. Nothing retries in the background, and the screen may sleep while the error shows. |
 | **Crash recovery** | If Android kills the WebView renderer (e.g. low memory while a wallet app is in front), the app rebuilds the WebView instead of crashing; in the background it waits until the player returns. A renderer that keeps crashing gets "Plonk stopped unexpectedly" and a growing countdown, not a loop. |
 | **Native bridge** | `window.PlonkNative` (`WebViewCompat.addWebMessageListener`), limited to the `https://play.plonk.land` main frame. Each feature is a small handler, and the page asks which ones this build has (`caps`). Full contract: [docs/APP_BRIDGE.md](docs/APP_BRIDGE.md). |
-| **Haptics** | `haptic` plays the phone's own click, tick and heavy-click effects for hits, loot and errors, rate-limited for combat (**needs the game page**). |
-| **Game alerts** | The page can turn boss spawns, payouts, party and trade invites and whispers into Android notifications while the game is off screen (on screen, the game shows them itself). Each kind is its own channel under "Game alerts", so players can mute one kind in system settings. The Android 13 prompt appears only when the game asks for it. Tapping an alert resumes the running game, and opening the game clears the shade (**needs the game page**). **Limit:** alerts come from the running page, so they cover the first seconds after switching away (a trip to the wallet, a quick reply), not hours later: Android 14+ freezes a background app. Alerts while away need a server feed or push (pending). |
-| **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for referral invites and brag text, and tells the page which app the player picked or that they cancelled (**needs the game page**). |
-| **Deep links** | App Links for `https://play.plonk.land`, referral links `https://plonk.land/?ref=...`, and `plonk://`. They open inside the game with `?ref=` / `?kol=` / `?open=` kept and checked. If the game is already running, the link goes to the page as an event instead of a reload, so a fight or trade isn't lost; a page that doesn't handle it gets a normal load. Verification needs `assetlinks.json` on both hosts (pending). See [Links into the game](#links-into-the-game). |
-| **Launcher shortcuts** | Long-press the icon for **Bag**, **Market** and **World map**. They open `?open=bag` / `market` / `map`, or send the running game the `open` event (the game page has to open the window: **needs the game page**). |
+| **Haptics** | `haptic` plays the phone's own click, tick and heavy-click effects. The game sends it on hits taken, kills, loot, level-ups, purchases and errors; the app rate-limits it for combat. |
+| **Game alerts** | An "Alert me when I'm away" toggle in the game's settings turns boss spawns, payouts and market sales, party and trade invites and whispers into Android notifications while the game is off screen (on screen, the game shows them itself). Each kind is its own channel under "Game alerts", so players can mute one kind in system settings. The Android 13 prompt appears only when the player turns the toggle on. Tapping an alert resumes the running game, and opening the game clears the shade. **Limit:** alerts come from the running page, so they cover the first seconds after switching away (a trip to the wallet, a quick reply), not hours later: Android 14+ freezes a background app. Alerts while away need a server feed or push (pending). |
+| **Share sheet** | `share` opens the Android share sheet (direct-share targets, preview title) for the invite button, and tells the page which app the player picked or that they cancelled. |
+| **Deep links** | App Links for `https://play.plonk.land` (the server serves `assetlinks.json` with the release cert, so Android can verify them), referral links `https://plonk.land/?ref=...`, and `plonk://`. They open inside the game with `?ref=` / `?kol=` / `?open=` kept and checked. If the game is already running, the link goes to the page as an event instead of a reload, so a fight or trade isn't lost. `plonk.land` does not serve `assetlinks.json` yet, so on Android 12+ its links open in the browser unless the player allows them in the app's settings. See [Links into the game](#links-into-the-game). |
+| **Launcher shortcuts** | Long-press the icon for **Bag**, **Market** and **World map**. They open `?open=bag` / `market` / `map`, or send the running game the `open` event, and the game opens that window once the player is in the world. |
 | **Links and files** | Only https `play.plonk.land` stays in the app; `http://` game links are upgraded to https, other sites open in the system browser, and popups need a tap. `intent:` links are reduced to implicit, browsable targets. File pickers (skin upload) use the system picker. |
+
 
 The WebView user agent ends in `Solana Mobile Web Shell PlonkApp/<version>`. The first marker lets wallet libraries treat the app as a supported MWA host. The second lets the game turn on app-only features.
 
@@ -128,7 +196,7 @@ window.addEventListener('plonknative', (e) => {
 
 If no listener calls `preventDefault()` (an older page, or a page still loading), the app loads `url` instead, so the link is never lost. A plain link to the page already showing just brings the app to the front. Any other link (a different path, other params) loads normally.
 
-**App Link verification.** `autoVerify` only succeeds once both hosts serve `/.well-known/assetlinks.json` with the release signing cert:
+**App Link verification.** `autoVerify` succeeds for a host once it serves `/.well-known/assetlinks.json` with the release signing cert. `play.plonk.land` serves it today; `plonk.land` (the landing site) does not yet. The file:
 
 ```json
 [{
@@ -154,6 +222,8 @@ FETCH_BUNDLE=1 scripts/build.sh release   # first pack the live game's files int
 ```
 
 `FETCH_BUNDLE=1` runs `tools/fetch-bundle.mjs` (Node 20+) before Gradle. It needs the server's `/app/manifest`, or set `BUNDLE_FROM=<game>/public` to pack from a local checkout. Without the flag, the existing bundle is kept. An APK with no bundle works normally and streams every file. See [docs/BUNDLE.md](docs/BUNDLE.md).
+
+The 1.0.0 release packs the live game's files as of manifest build `ba477e82e570`: 1,182 files, 39.1 MB before compression.
 
 Our build box also runs the live game server, so `scripts/build.sh` runs Gradle inside a `systemd-run` scope:
 - hard 2.6 GB memory cap
