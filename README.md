@@ -29,12 +29,12 @@ Wallet sign-in and market purchases through MWA have been tested on a Seeker.
 
 Requires Android 9 or newer and a Solana wallet app (Seekers ship with Seed Vault Wallet).
 
-1. Get the signed APK, `Plonk-1.0.0.apk`, from the submission.
-2. Install it with `adb install Plonk-1.0.0.apk`, or open the file on the phone and allow installs from that source.
+1. Get the signed APK, `Plonk-1.0.1.apk`, from the [v1.0.1 release](https://github.com/kevinzor/plonk-android/releases/tag/v1.0.1) (also linked in the submission).
+2. Install it with `adb install Plonk-1.0.1.apk`, or open the file on the phone and allow installs from that source.
 3. Open Plonk, tap Connect, and approve in the wallet.
 
 The release signing certificate is
-`89:4B:A1:18:65:81:5E:7A:24:27:E7:04:3D:8C:00:07:DD:46:80:D7:74:E7:0F:9D:AC:A7:09:56:17:EE:20:82` (SHA-256). Check it with `apksigner verify --print-certs Plonk-1.0.0.apk`.
+`89:4B:A1:18:65:81:5E:7A:24:27:E7:04:3D:8C:00:07:DD:46:80:D7:74:E7:0F:9D:AC:A7:09:56:17:EE:20:82` (SHA-256). Check it with `apksigner verify --print-certs Plonk-1.0.1.apk`.
 
 To build it yourself, see [Build](#build).
 
@@ -223,7 +223,7 @@ FETCH_BUNDLE=1 scripts/build.sh release   # first pack the live game's files int
 
 `FETCH_BUNDLE=1` runs `tools/fetch-bundle.mjs` (Node 20+) before Gradle. It needs the server's `/app/manifest`, or set `BUNDLE_FROM=<game>/public` to pack from a local checkout. Without the flag, the existing bundle is kept. An APK with no bundle works normally and streams every file. See [docs/BUNDLE.md](docs/BUNDLE.md).
 
-The 1.0.0 release packs the live game's files as of manifest build `ba477e82e570`: 1,182 files, 39.1 MB before compression.
+The 1.0.1 release packs the live game's files as of manifest build `95f33281176d`: 1,187 files, 39.1 MB before compression.
 
 Our build box also runs the live game server, so `scripts/build.sh` runs Gradle inside a `systemd-run` scope:
 - hard 2.6 GB memory cap
