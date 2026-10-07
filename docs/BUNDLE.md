@@ -62,7 +62,7 @@ node tools/fetch-bundle.mjs --clean                                   # remove i
 
 ## Server contract: `GET /app/manifest`
 
-The game server must provide this endpoint. Until it does, the app runs in `network` mode, which is the same as having no bundle.
+The game server provides this endpoint (`src/http/app-manifest.js` in the game repo, live since 2026-10-07). A server without it leaves the app in `network` mode, which is the same as having no bundle.
 
 ```http
 GET /app/manifest

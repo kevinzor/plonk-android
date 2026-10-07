@@ -311,23 +311,18 @@ None of this needs page code.
 
 ## Pending work
 
-The live game does not use any of the bridge yet. Today it reads only `?ref=` from the URL. Everything below is optional, and the app works without it.
+**Done (live since 2026-10-07).** The game page uses the bridge through `public/js/app-bridge.js` in the game repo: `window.plonkBack`, cold-start `?open=` / `?kol=` and the `plonknative` `open` event, the "Alert me when I'm away" toggle with `notify` on boss spawns, payouts and sales, invites and whispers, `share` on the invite button, `wallets` / `getWallet` before the MWA connect, and `haptic`. The server serves `GET /app/manifest` and `/.well-known/assetlinks.json` on `play.plonk.land` with the release cert. Every hook is a no-op outside the app.
+
+Still open. None of it is needed for the app to work.
 
 **Game page (web repo)**
-1. Define `window.plonkBack = () => escCloseTop()` so back closes the right window.
-2. On boot, read `?open=` and `?kol=` (`?ref=` is already read), and add the `plonknative` listener for `open` (and, if wanted, `online`).
-3. Add an "Alert me when I'm away" toggle (`notifyPermission`, `notifyState`, `notifySettings`). Send `notify` where in-game toasts already fire for boss spawns, payouts, invites and whispers.
-4. Use `share` for invite and brag buttons. Invite links should be `https://plonk.land/?ref=CODE` or `https://play.plonk.land/?ref=CODE`, so they open in the app.
-5. Before the MWA connect, call `wallets`. If the list is empty, offer `getWallet` for Phantom and Solflare.
-6. Send `haptic` on hits, loot and level-ups.
-7. Optional: `awake: false` in long menus or AFK. Show an "offline copy" note when `bundle` says `mode: 'offline'`.
-8. If the game adds a new static folder or file type, add it to `BundlePaths.kt` and `tools/fetch-bundle.mjs`.
-9. Don't send `{ t: 'status' }` yet. `LoadController.serverUpdating()` exists, but no handler is wired to it.
+1. Optional: `awake: false` in long menus or AFK. Show an "offline copy" note when `bundle` says `mode: 'offline'`. (The page deliberately leaves the `online` event unhandled, so the app reloads onto the live game.)
+2. If the game adds a new static folder or file type, add it to `BundlePaths.kt` and `tools/fetch-bundle.mjs`.
+3. Don't send `{ t: 'status' }` yet. `LoadController.serverUpdating()` exists, but no handler is wired to it.
 
-**Game server**
-1. Serve `/.well-known/assetlinks.json` on both `play.plonk.land` and `plonk.land` (see the README) so App Links verify.
-2. Add `GET /app/manifest` ([BUNDLE.md](BUNDLE.md)). Until it exists, the bundle runs in `network` mode.
-3. During deploys and restarts, let the main document return 502/503/504 rather than a 200 maintenance page, so the app shows "Plonk is updating" and retries.
-4. For alerts while the player is away: an authenticated feed such as `GET /app/alerts?since=<cursor>` that the app can poll with WorkManager (every 15 min at most, plus once right after the player leaves), or push. The app side is not built yet.
-5. If security headers are ever added (CSP, `frame-ancestors`...), also list them in `/app/manifest` so the app can replay them, and update the app.
-6. Optional: have the game socket send the client build, and ask old builds to reload. This guards stale tabs on the website and the app's offline snapshot alike.
+**Game server and landing site**
+1. Serve `/.well-known/assetlinks.json` on `plonk.land` too (the landing site), so referral links on that host verify as App Links.
+2. During deploys and restarts, let the main document return 502/503/504 rather than a 200 maintenance page, so the app shows "Plonk is updating" and retries.
+3. For alerts while the player is away: an authenticated feed such as `GET /app/alerts?since=<cursor>` that the app can poll with WorkManager (every 15 min at most, plus once right after the player leaves), or push. The app side is not built yet.
+4. If security headers are ever added (CSP, `frame-ancestors`...), also list them in `/app/manifest` so the app can replay them, and update the app.
+5. Optional: have the game socket send the client build, and ask old builds to reload. This guards stale tabs on the website and the app's offline snapshot alike.
