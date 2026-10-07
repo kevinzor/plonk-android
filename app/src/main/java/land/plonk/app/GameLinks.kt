@@ -93,16 +93,26 @@ class GameLinks(
     private val startParams = queryParams(start)
 
     /** The link in [intent], or null if it isn't a game link (e.g. a plain launcher start). */
-    fun fromIntent(intent: Intent?): GameLink? {
+    fun fromIntent(intent: Intent?): GameLink? = viewData(intent)?.let(::parse)
+
+    /**
+     * The Privacy Policy or Terms page [intent] asks for, or null. These are App Links too (every
+     * play.plonk.land path is, e.g. the dApp Store listing's policy links), but they are pages to
+     * read, so MainActivity hands them to the browser instead of loading them over the game.
+     */
+    fun documentIn(intent: Intent?): Uri? = viewData(intent)?.takeIf { isDocument(it, gameHost) }
+
+    private fun viewData(intent: Intent?): Uri? {
         if (intent?.action != Intent.ACTION_VIEW) return null
         // Reopening from Recents replays the original intent; don't reopen the bag every time.
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
-        return parse(intent.data ?: return null)
+        return intent.data
     }
 
     fun parse(uri: Uri): GameLink? {
         val scheme = uri.scheme?.lowercase() ?: return null
         val host = uri.host?.lowercase()
+        if (isDocument(uri, gameHost)) return null
         return when {
             scheme == "https" && host == gameHost && isPlainAuthority(uri) -> fromGameUrl(uri)
             scheme == "https" && host == REFERRAL_HOST && isPlainAuthority(uri) && isRoot(uri) ->
@@ -212,18 +222,30 @@ class GameLinks(
     private fun Uri.safeQuery(name: String): String? =
         runCatching { getQueryParameter(name) }.getOrNull()?.trim()
 
-    private companion object {
-        const val SCHEME = "plonk"
-        const val REFERRAL_HOST = "plonk.land"
-        const val MAX_PARAM_VALUE = 512
+    companion object {
+        /** Game-host pages that are documents (served by the game's src/http/legal.js), not the game. */
+        private val DOCUMENT_PATHS = setOf("/privacy", "/terms", "/privacy.html", "/terms.html")
 
-        val OPEN_TARGETS = setOf("bag", "market", "map")
-        val LINK_PARAMS = setOf("open", "ref", "kol")
+        /** True if [uri] is the game host's Privacy Policy or Terms page. */
+        fun isDocument(
+            uri: Uri,
+            gameHost: String,
+        ): Boolean =
+            uri.scheme.equals("https", ignoreCase = true) &&
+                uri.host.equals(gameHost, ignoreCase = true) &&
+                uri.path.orEmpty().trimEnd('/').lowercase() in DOCUMENT_PATHS
+
+        private const val SCHEME = "plonk"
+        private const val REFERRAL_HOST = "plonk.land"
+        private const val MAX_PARAM_VALUE = 512
+
+        private val OPEN_TARGETS = setOf("bag", "market", "map")
+        private val LINK_PARAMS = setOf("open", "ref", "kol")
 
         /** Referral and creator codes: wallet addresses, handles, short slugs. */
-        val CODE = Regex("^[A-Za-z0-9_.@-]{1,64}$")
-        val PARAM_NAME = Regex("^[A-Za-z0-9_.-]{1,40}$")
-        val SAFE_PATH = Regex("^/[A-Za-z0-9._~/-]{0,200}$")
-        val SAFE_FRAGMENT = Regex("^[A-Za-z0-9._~/=&-]{1,200}$")
+        private val CODE = Regex("^[A-Za-z0-9_.@-]{1,64}$")
+        private val PARAM_NAME = Regex("^[A-Za-z0-9_.-]{1,40}$")
+        private val SAFE_PATH = Regex("^/[A-Za-z0-9._~/-]{0,200}$")
+        private val SAFE_FRAGMENT = Regex("^[A-Za-z0-9._~/=&-]{1,200}$")
     }
 }

@@ -19,8 +19,8 @@ import androidx.core.net.toUri
  * Navigation policy for the game WebView. Forked from Solana Mobile's webshell template
  * (Apache-2.0), plus renderer-crash recovery and main-frame callbacks for MainActivity.
  *
- * - https://play.plonk.land (default port) stays inside the app; every other http(s) page opens
- *   in the system browser. An http:// link to the game (a redirect built behind a proxy) is
+ * - https://play.plonk.land (default port) stays inside the app, except the Privacy Policy and
+ *   Terms pages; every other http(s) page opens in the system browser. An http:// link to the game (a redirect built behind a proxy) is
  *   upgraded to https in place, because cleartext would fail and retry forever.
  * - solana-wallet: links launch the wallet app (Mobile Wallet Adapter), then a synthetic blur
  *   tells the MWA JS client that the wallet opened (a WebView never fires blur on its own).
@@ -65,13 +65,20 @@ open class PlonkWebViewClient(
 
             "http", "https" ->
                 when {
+                    // The Privacy Policy and Terms are pages to read, not the game: the browser shows
+                    // them, so following one never unloads the game.
+                    GameLinks.isDocument(url, scopeHost) -> {
+                        launchExternal(ExternalBrowser.intentFor(context, url))
+                        true
+                    }
                     isInScope(url, scopeHost) -> false
                     scheme == "http" && url.host.equals(scopeHost, ignoreCase = true) -> {
                         view.loadUrl(upgraded(url).toString())
                         true
                     }
                     else -> {
-                        launchExternal(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
+                        // e.g. https://plonk.land/ is an App Link of this app too: keep it in the browser.
+                        launchExternal(ExternalBrowser.intentFor(context, url))
                         true
                     }
                 }

@@ -1,7 +1,6 @@
 package land.plonk.app
 
 import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -123,7 +122,9 @@ class PlonkChromeClient(
         val scheme = url.scheme?.lowercase()
         if (scheme != "http" && scheme != "https") return
         try {
-            view.context.startActivity(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
+            // Our own pages (the Privacy Policy and Terms links) would otherwise come straight back to
+            // the app as an App Link and replace the game. See ExternalBrowser.
+            view.context.startActivity(ExternalBrowser.intentFor(view.context, url))
         } catch (_: ActivityNotFoundException) {
             if (isDebug) Log.w(TAG, "No app for popup URL: $url")
         } catch (e: RuntimeException) {

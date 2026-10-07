@@ -146,6 +146,9 @@ class MainActivity : ComponentActivity() {
         // Cold start from a link (App Link, plonk://, shortcut): the link is simply the first page.
         // A recreated activity (process restored) must not replay the link that first opened it.
         val link = if (savedInstanceState == null) links.fromIntent(intent) else null
+        // Opened by a Privacy Policy / Terms link (e.g. from the dApp Store listing): show the page in
+        // the browser and start the game as usual behind it.
+        if (savedInstanceState == null) links.documentIn(intent)?.let(::openDocument)
         loads.loading()
         newWebView().loadUrl(link?.url?.toString() ?: startUrl)
         backCallback = onBackPressedDispatcher.addCallback(this) { handleBack() }
@@ -155,6 +158,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // A Privacy Policy / Terms link never replaces the game: it opens in the browser.
+        links.documentIn(intent)?.let { return openDocument(it) }
         val link = links.fromIntent(intent) ?: return
         val wv = webView
         if (wv == null || loads.isShowingProblem) {
@@ -164,6 +169,11 @@ class MainActivity : ComponentActivity() {
         } else {
             links.deliver(wv, link, beforeLoad = loads::loading)
         }
+    }
+
+    /** No browser at all: nothing happens, and the game stays as it was. */
+    private fun openDocument(url: Uri) {
+        runCatching { startActivity(ExternalBrowser.intentFor(this, url)) }
     }
 
     override fun onStart() {
